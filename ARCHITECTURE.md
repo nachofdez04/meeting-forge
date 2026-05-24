@@ -4,7 +4,7 @@
 
 Sistema modular para transformar reuniones técnicas en documentación estructurada mediante IA generativa. Esta versión (Fase 0) cubre el pipeline básico audio → JSON.
 
-## Pipeline principal (Fase 0)
+## Pipeline principal (Fase 1)
 
 ```
         Audio de reunión (.wav, .mp3, …)
@@ -110,9 +110,63 @@ Toda la configuración pasa por variables de entorno cargadas vía `pydantic-set
 3. **Performance**: Latencia E2E por minuto de audio, coste por reunión.
 4. **Calidad**: Evaluación humana sobre ADRs generados (Fase 2+).
 
+## Fase 1: RAG con provenance
+
+### Pipeline ampliado
+
+```
+                  Documentación
+              (DOCS_PATH + repo/*.md)
+                       │
+                       ▼
+          [scripts/index_docs.py]
+            MarkdownChunker
+            SentenceTransformerEmbeddings
+            ChromaVectorStore (persistente)
+                       │
+                       ▼
+              data/chromadb/
+                       │
+                       │ query()
+                       ▼
+       ┌────────────────────────────────┐
+       │ rag.Retriever                  │
+       │   sliding windows del transcript│
+       │   top-K agregados + dedupe     │
+       └────────────────────────────────┘
+                       │
+       Transcript ─────┘─► context block (#1, #2, ...)
+                       ▼
+              InsightsExtractor (prompt v2)
+                       │
+                       ▼
+              MeetingInsights con sources
+              (path + líneas + section)
+```
+
+### Componentes nuevos
+
+- `rag/chunker.py` — chunking por jerarquía de headers (markdown-it-py); split por tamaño con overlap cuando una sección excede `chunk_max_chars`.
+- `rag/embeddings.py` — `SentenceTransformerEmbeddings` (cache singleton del modelo).
+- `rag/vector_store.py` — `ChromaVectorStore` con upsert idempotente (`chunk_id` como ID estable por hash).
+- `rag/indexer.py` — `DocumentIndexer` recorre rutas, chunkea, embebe por batch (32), upsert.
+- `rag/retriever.py` — `retrieve_for_transcript()` divide en ventanas, agrega, deduplica.
+
+### Decisiones adicionales
+
+- **Provenance vía marcadores `"#N"`**: el LLM elige índices (no copia paths); el extractor mapea a `SourceRef` después. Evita errores de copia y permite que sólo cambien los marcadores entre runs.
+- **Schema raw interno**: `_RawMeetingInsights` con `sources: list[str]` para la conversación con el LLM; el schema público `MeetingInsights` ya contiene `SourceRef` objects.
+- **Idempotencia**: `chunk_id = sha1(source_path:line_start-line_end:text)[:16]`. Reindexar el mismo archivo no duplica.
+- **ChromaDB con cosine similarity**: `metadata={"hnsw:space": "cosine"}` y embeddings normalizados en `embed_texts`.
+- **Fallback graceful**: si el store está vacío al correr `run_e2e.py`, log warning + ejecuta sin RAG (no rompe).
+
+### Métricas de evaluación adicionales (Fase 1)
+
+- **Retrieval quality**: precision@k contra un set anotado manualmente (¿están los chunks relevantes en el top-K?).
+- **Cobertura de provenance**: % de decisiones que reciben al menos una cita cuando la docs sí cubre el tema.
+
 ## Próximas fases
 
-- **Fase 1 — RAG**: ChromaDB + sentence-transformers para indexar documentación Markdown existente y enriquecer la extracción con contexto del proyecto.
-- **Fase 2 — Generación**: ADRs, actas y updates de docs a partir de los insights.
-- **Fase 3 — UI**: Streamlit para subir audio y revisar outputs.
-- **Fase 4 — Integración Git**: commits/PRs automáticos con human-in-the-loop.
+- **Fase 2 — Generación**: aprovechar los `sources` para generar ADRs/actas con citas reales (mkdocs-friendly). Plantillas en `prompts/generation/`.
+- **Fase 3 — UI**: Streamlit con transcript, insights y panel de evidencia (chunks recuperados).
+- **Fase 4 — Integración Git**: commits/PRs automáticos con human-in-the-loop (`validation/`).

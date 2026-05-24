@@ -2,9 +2,10 @@
 
 Sistema de IA generativa para transcribir reuniones técnicas y extraer insights estructurados (decisiones, tareas, temas).
 
-## Estado: Fase 0 — Walking Skeleton
+## Estado: Fase 1 — RAG
 
-Pipeline end-to-end: **Audio → Transcripción (Whisper) → Insights (LLM) → JSON estructurado**.
+Pipeline end-to-end con contexto documental:
+**Audio → Transcripción (Whisper) → Retrieval (ChromaDB + sentence-transformers) → Insights con citas (LLM) → JSON estructurado**.
 
 ## Setup
 
@@ -51,15 +52,34 @@ cp .env.example .env
 
 ## Uso
 
+### 1. Indexar documentación (RAG)
+
+Antes del E2E con RAG activado, indexa los Markdown del repo (+ `DOCS_PATH` si está configurado):
+
 ```bash
-# Ejecutar pipeline E2E
+uv run python scripts/index_docs.py
+# Para reindexar desde cero:
+uv run python scripts/index_docs.py --clear
+# Para añadir rutas extra:
+uv run python scripts/index_docs.py --path C:/otros/docs --path C:/mas/docs
+```
+
+El índice persiste en `data/chromadb/`. Idempotente: ejecutarlo dos veces no duplica chunks.
+
+### 2. Ejecutar pipeline E2E
+
+```bash
+# Con RAG (default si rag_enabled=true)
 uv run python scripts/run_e2e.py data/raw/test_meeting.wav
 
-# Con proveedor específico (sobreescribiendo .env)
+# Sin RAG (Fase 0 behaviour)
+uv run python scripts/run_e2e.py data/raw/test_meeting.wav --no-rag
+
+# Con proveedor específico
 LLM_PROVIDER=openai uv run python scripts/run_e2e.py data/raw/test_meeting.wav
 ```
 
-El resultado se escribe en `data/outputs/<nombre>_result.json`.
+El resultado se escribe en `data/outputs/<nombre>_result.json` e incluye `sources` (referencias path + líneas) en las decisiones y tareas fundamentadas en la documentación.
 
 ## Tests
 
@@ -116,7 +136,7 @@ Ver [`ARCHITECTURE.md`](ARCHITECTURE.md) para detalles de arquitectura y decisio
 ## Roadmap
 
 - [x] **Fase 0**: Walking skeleton (transcripción + extracción básica)
-- [ ] **Fase 1**: RAG sobre documentación Markdown
+- [x] **Fase 1**: RAG sobre documentación Markdown (provenance con `sources`)
 - [ ] **Fase 2**: Generación de ADRs y actas
 - [ ] **Fase 3**: UI Streamlit
 - [ ] **Fase 4**: Human-in-the-loop + integración Git

@@ -2,6 +2,10 @@
 
 from pydantic import BaseModel, Field
 
+from ..rag.schemas import SourceRef
+
+__all__ = ["ActionItem", "Decision", "MeetingInsights", "SourceRef"]
+
 
 class Decision(BaseModel):
     """Decisión técnica identificada en la reunión."""
@@ -11,6 +15,10 @@ class Decision(BaseModel):
     rationale: str | None = Field(None, description="Justificación o contexto")
     owners: list[str] = Field(default_factory=list, description="Responsables de la decisión")
     tags: list[str] = Field(default_factory=list, description="Tags para categorización")
+    sources: list[SourceRef] = Field(
+        default_factory=list,
+        description="Citas a chunks de documentación que respaldan la decisión",
+    )
 
 
 class ActionItem(BaseModel):
@@ -19,6 +27,10 @@ class ActionItem(BaseModel):
     description: str = Field(..., description="Descripción de la tarea")
     assignee: str | None = Field(None, description="Persona asignada")
     deadline: str | None = Field(None, description="Fecha límite si se mencionó")
+    sources: list[SourceRef] = Field(
+        default_factory=list,
+        description="Citas a chunks de documentación relacionados",
+    )
 
 
 class MeetingInsights(BaseModel):

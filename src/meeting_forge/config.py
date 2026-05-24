@@ -37,6 +37,19 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-2024-08-06"
     ollama_model: str = "llama3.1:8b"
 
+    # --- RAG ---
+    rag_enabled: bool = True
+    docs_path: Path | None = None
+    chromadb_path: Path = data_dir / "chromadb"
+    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    chroma_collection: str = "meeting_forge_docs"
+    retrieval_top_k: int = 5
+    retrieval_per_query_k: int = 3
+    chunk_max_chars: int = 1500
+    chunk_overlap_chars: int = 200
+    transcript_query_chars: int = 500
+    context_max_chars: int = 8000
+
     # --- Logging ---
     log_level: str = "INFO"
 
@@ -44,6 +57,7 @@ class Settings(BaseSettings):
         """Crea los directorios de datos si no existen."""
         for sub in ("raw", "transcripts", "outputs"):
             (self.data_dir / sub).mkdir(parents=True, exist_ok=True)
+        self.chromadb_path.mkdir(parents=True, exist_ok=True)
 
 
 settings = Settings()
