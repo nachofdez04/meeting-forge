@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# uv
+uv.lock
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Datos (mantener directorios pero ignorar contenido)
+data/raw/*
+data/transcripts/*
+data/outputs/*
+!data/**/.gitkeep
+
+# Modelos descargados
+models/
+*.pt
+*.bin
+*.safetensors
+
+# Secrets
+.env
+.env.local
+*.pem
+*.key
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Logs
+*.log
+logs/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Build artefacts
+*.spec
