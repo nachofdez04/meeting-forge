@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Any, Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,6 +50,26 @@ class Settings(BaseSettings):
     chunk_overlap_chars: int = 200
     transcript_query_chars: int = 500
     context_max_chars: int = 8000
+
+    # --- Generation (Fase 2) ---
+    generation_enabled: bool = True
+    generation_modes: list[str] = ["adr-per-decision", "acta"]
+    adr_prompt_version: str = "v1"
+    generation_max_tokens: int = 4000
+
+    @field_validator("generation_modes", mode="before")
+    @classmethod
+    def _parse_generation_modes(cls, v: object) -> list[str]:
+        """Acepta CSV ("adr-per-decision,acta") o lista JSON ("[\\"adr-per-decision\\"]")."""
+        if isinstance(v, list):
+            return [str(item) for item in v]
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("["):
+                import json
+                return json.loads(v)
+            return [item.strip() for item in v.split(",") if item.strip()]
+        return []
 
     # --- Logging ---
     log_level: str = "INFO"

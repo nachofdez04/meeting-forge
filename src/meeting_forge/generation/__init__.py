@@ -1,1 +1,12 @@
-"""Módulo de generación (reservado para Fase 2): ADRs, actas, updates de docs."""
+"""Módulo de generación (Fase 2): ADRs y actas con citas reales a partir de MeetingInsights."""
+
+from .generator import DocumentGenerator
+from .schemas import DocumentKind, GeneratedDocument, GenerationMode, MeetingMetadata
+
+__all__ = [
+    "DocumentGenerator",
+    "DocumentKind",
+    "GeneratedDocument",
+    "GenerationMode",
+    "MeetingMetadata",
+]

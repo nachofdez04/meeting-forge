@@ -1,0 +1,75 @@
+{
+  "decisions": [
+    {
+      "title": "Adoptar ChromaDB como vector store",
+      "description": "Se decide usar ChromaDB con HNSW y similitud coseno para indexar los chunks de documentación del proyecto.",
+      "rationale": "Persistente, sin servidor externo, idempotente con chunk_id como clave estable.",
+      "owners": ["equipo-backend"],
+      "tags": ["arquitectura", "rag"],
+      "sources": [
+        {
+          "source_path": "tests/fixtures/sample_docs/adr-001.md",
+          "line_start": 1,
+          "line_end": 5,
+          "section_path": ["Contexto"]
+        },
+        {
+          "source_path": "tests/fixtures/sample_docs/glossary.md",
+          "line_start": 10,
+          "line_end": 12,
+          "section_path": ["ChromaDB"]
+        }
+      ]
+    },
+    {
+      "title": "Usar sentence-transformers para embeddings",
+      "description": "Se opta por all-MiniLM-L6-v2 como modelo de embeddings local, sin coste de API.",
+      "rationale": "Privacidad, sin latencia de red, calidad suficiente para este caso de uso.",
+      "owners": ["equipo-backend", "nacho"],
+      "tags": ["rag", "embeddings"],
+      "sources": [
+        {
+          "source_path": "tests/fixtures/sample_docs/adr-001.md",
+          "line_start": 1,
+          "line_end": 5,
+          "section_path": ["Contexto"]
+        }
+      ]
+    },
+    {
+      "title": "Transcripción local con faster-whisper",
+      "description": "El audio nunca sale de la máquina. Se usa faster-whisper con VAD integrado.",
+      "rationale": null,
+      "owners": [],
+      "tags": ["transcripcion", "privacidad"],
+      "sources": []
+    }
+  ],
+  "action_items": [
+    {
+      "description": "Preparar benchmark de latencia de embeddings en CPU vs GPU",
+      "assignee": "nacho",
+      "deadline": "2026-06-01",
+      "sources": [
+        {
+          "source_path": "tests/fixtures/sample_docs/adr-001.md",
+          "line_start": 1,
+          "line_end": 5,
+          "section_path": ["Contexto"]
+        }
+      ]
+    },
+    {
+      "description": "Documentar el proceso de indexación en README",
+      "assignee": null,
+      "deadline": null,
+      "sources": []
+    }
+  ],
+  "topics": [
+    "arquitectura RAG",
+    "selección de embeddings",
+    "privacidad del audio"
+  ],
+  "summary": "Se acordó la arquitectura RAG con ChromaDB y sentence-transformers para el módulo de recuperación de documentación. La transcripción permanece local con faster-whisper para preservar la privacidad."
+}
