@@ -2,10 +2,10 @@
 
 Sistema de IA generativa para transcribir reuniones técnicas y extraer insights estructurados (decisiones, tareas, temas).
 
-## Estado: Fase 1 — RAG
+## Estado: Fase 3 — UI Streamlit
 
-Pipeline end-to-end con contexto documental:
-**Audio → Transcripción (Whisper) → Retrieval (ChromaDB + sentence-transformers) → Insights con citas (LLM) → JSON estructurado**.
+Pipeline end-to-end con contexto documental y visor interactivo:
+**Audio → Transcripción (Whisper) → Retrieval (ChromaDB + sentence-transformers) → Insights con citas (LLM) → Generación de ADRs/Actas → UI Streamlit**.
 
 ## Setup
 
@@ -81,6 +81,18 @@ LLM_PROVIDER=openai uv run python scripts/run_e2e.py data/raw/test_meeting.wav
 
 El resultado se escribe en `data/outputs/<nombre>_result.json` e incluye `sources` (referencias path + líneas) en las decisiones y tareas fundamentadas en la documentación.
 
+### 3. UI — visor de reuniones
+
+```bash
+# Instalar dependencias de UI (solo la primera vez)
+uv sync --group ui
+
+# Lanzar el visor
+uv run --group ui streamlit run src/meeting_forge/ui/app.py
+```
+
+El visor navega los outputs ya procesados en `data/outputs/` y muestra: resumen ejecutivo, transcript con timestamps, decisiones y tareas con sus fuentes, panel de evidencia (texto real de los chunks citados) y los ADRs/Actas generados.
+
 ## Tests
 
 ```bash
@@ -114,7 +126,7 @@ uv run pre-commit run --all-files
 
 ## Estructura del proyecto
 
-```
+```text
 meeting-forge/
 ├── src/meeting_forge/   # Paquete principal
 │   ├── ingestion/       # Transcripción (Whisper)
@@ -137,6 +149,6 @@ Ver [`ARCHITECTURE.md`](ARCHITECTURE.md) para detalles de arquitectura y decisio
 
 - [x] **Fase 0**: Walking skeleton (transcripción + extracción básica)
 - [x] **Fase 1**: RAG sobre documentación Markdown (provenance con `sources`)
-- [ ] **Fase 2**: Generación de ADRs y actas
-- [ ] **Fase 3**: UI Streamlit
+- [x] **Fase 2**: Generación de ADRs y actas
+- [x] **Fase 3**: UI Streamlit (visor de reuniones procesadas)
 - [ ] **Fase 4**: Human-in-the-loop + integración Git

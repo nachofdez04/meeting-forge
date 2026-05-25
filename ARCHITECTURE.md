@@ -235,7 +235,54 @@ data/outputs/<meeting_stem>/
     └── acta-YYYY-MM-DD-<stem>.md
 ```
 
+## Fase 3: UI — Visor Streamlit
+
+### Pipeline ampliado
+
+```text
+      data/outputs/<meeting_id>/
+        ├── *_result.json      ← transcript + insights + SourceRefs
+        └── {adr,acta}/*.md   ← documentos generados
+                  │
+                  ▼
+    [ui/loader.py]
+      list_meetings()          ← escanea data/outputs/, ordena por mtime
+      load_meeting()           ← deserializa result.json → MeetingData
+      load_generated_docs()    ← lee los .md de adr/ y acta/
+                  │
+                  ▼
+    [ui/evidence.py]
+      read_source_slice()      ← para cada SourceRef, lee las líneas
+                               indicadas del archivo fuente original
+                  │
+                  ▼
+    [ui/app.py]  Streamlit
+      Sidebar: meeting picker + metadata del run
+      Tabs:
+        Resumen    → summary + topics + métricas
+        Transcript → tabla de segmentos con timestamps
+        Insights   → decisiones/tareas con fuentes expandibles
+        Evidencia  → rodajas de archivos fuente por decisión
+        Documentos → render + descarga de ADRs y Actas
+```
+
+### Componentes nuevos
+
+- `ui/loader.py` — `list_meetings()`, `load_meeting()`, `load_generated_docs()`. Sin dependencia de Streamlit (testeables de forma aislada).
+- `ui/evidence.py` — `read_source_slice()`: resuelve `SourceRef.source_path` relativo al project root, lee el slice de líneas con `lru_cache` por archivo.
+- `ui/app.py` — app Streamlit. `@st.cache_data` en las funciones de carga para evitar releer JSON en cada interacción.
+
+### Decisiones de diseño
+
+- **Visor read-only**: el pipeline sigue ejecutándose vía `scripts/run_e2e.py`. La UI no replica ni orquesta el pipeline.
+- **Evidencia desde archivos fuente**: los chunks recuperados por el retriever no se persisten en disco; la UI lee las rodajas directamente de los archivos de documentación originales a partir de los `SourceRef` (path + líneas). Requiere que la documentación siga accesible en el mismo path relativo.
+- **Graceful fallback**: si el archivo fuente de un `SourceRef` no existe (movido o eliminado), la UI muestra un `st.warning` con el motivo sin romper la navegación.
+- **Streamlit como dep opcional**: declarado en `[dependency-groups] ui` de `pyproject.toml`, no en deps principales. Se instala con `uv sync --group ui`.
+
+### Parámetros de configuración (Fase 3)
+
+No se añaden nuevas variables de entorno. La UI reutiliza `settings.data_dir` (para localizar `data/outputs/`) y `settings.project_root` (como base para resolver `SourceRef.source_path`).
+
 ## Próximas fases
 
-- **Fase 3 — UI**: Streamlit con transcript, insights y panel de evidencia (chunks recuperados).
 - **Fase 4 — Integración Git**: commits/PRs automáticos con human-in-the-loop (`validation/`).
