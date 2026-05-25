@@ -283,6 +283,72 @@ data/outputs/<meeting_stem>/
 
 No se añaden nuevas variables de entorno. La UI reutiliza `settings.data_dir` (para localizar `data/outputs/`) y `settings.project_root` (como base para resolver `SourceRef.source_path`).
 
-## Próximas fases
+## Fase 4: Integración Git con Human-in-the-Loop
 
-- **Fase 4 — Integración Git**: commits/PRs automáticos con human-in-the-loop (`validation/`).
+### Pipeline ampliado
+
+```text
+      data/outputs/<meeting_id>/
+        ├── adr/*.md, acta/*.md   ← generados por Fase 2 (read-only)
+        └── validation.json       ← NUEVO: estado HITL por documento
+
+      Tab "Validación" (Streamlit UI)
+        ├── Por cada doc: Preview / Editar + Aprobar / Rechazar / Reset
+        └── Botón "Publicar a Git" (habilitado si ≥1 aprobado)
+                  │
+                  ▼
+        git_integration.publisher.publish_meeting()
+                  │
+                  ├── 1. ensure_repo (clone/validate)
+                  ├── 2. checkout base branch + pull
+                  ├── 3. crear rama meeting-forge/<meeting_id>-<date>
+                  ├── 4. escribir docs aprobados en docs_subdir/
+                  ├── 5. git add + commit + push
+                  └── 6. gh pr create → PR URL
+                  │
+                  ▼
+        publish.json escrito + UI muestra PR URL
+```
+
+### Componentes nuevos
+
+- `validation/schemas.py` — `ValidationStatus` enum, `ValidationRecord`, `MeetingValidationState`.
+- `validation/store.py` — `load_state()`, `save_state()` (atómico), `initialize_pending()` (idempotente), `mark_approved()`, `mark_rejected()`, `reset_record()`, `get_effective_content()`.
+- `git_integration/schemas.py` — `PublishRequest`, `PublishResult`.
+- `git_integration/templates.py` — `build_branch_name()`, `build_commit_message()`, `build_pr_title()`, `build_pr_body()`.
+- `git_integration/repo.py` — wrappers sobre `git` CLI: `ensure_repo()`, `checkout_branch()`, `pull()`, `write_files()`, `add_and_commit()`, `push()`.
+- `git_integration/pr.py` — `is_gh_available()`, `create_pr()` (vía `gh` CLI).
+- `git_integration/publisher.py` — `publish_meeting()` (orquestador), `load_publish_result()`.
+
+### Decisiones de diseño
+
+- **Estado persistido en `validation.json`**: permite que la UI muestre el progreso entre reruns y que el publicador sepa qué docs publicar. Escritura atómica (tmp + rename).
+- **Contenido editado sobreescribe el original**: si el usuario edita un documento en la UI, `get_effective_content()` devuelve la versión editada al publicador. El archivo original en `data/outputs/` no se modifica.
+- **Un commit + un PR por reunión**: todos los docs aprobados van en un solo commit en una rama `meeting-forge/<meeting_id>-<date>`. La granularidad de revisión la da el diff del PR.
+- **`gh` CLI para PRs**: sin dependencias Python adicionales. El usuario gestiona la autenticación con `gh auth login`. Si `gh` no está disponible, el commit y push se completan igualmente y el publisher logea un warning.
+- **Repo destino externo**: los docs auto-generados van a un repo configurado vía `GIT_TARGET_REPO_PATH`, separado del repo de código.
+- **Desactivado por defecto**: `GIT_INTEGRATION_ENABLED=false`. El tab Validación siempre es visible, pero el botón "Publicar a Git" se deshabilita con mensaje explicativo.
+
+### Parámetros de configuración (Fase 4)
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `GIT_INTEGRATION_ENABLED` | `false` | Activa/desactiva la publicación |
+| `GIT_TARGET_REPO_PATH` | `None` | Ruta local del repo destino |
+| `GIT_TARGET_REMOTE` | `None` | URL git para clone inicial (opcional) |
+| `GIT_DOCS_SUBDIR` | `docs/meetings` | Subdir dentro del repo destino |
+| `GIT_BASE_BRANCH` | `main` | Rama base del repo destino |
+| `GIT_BRANCH_PREFIX` | `meeting-forge/` | Prefijo de ramas creadas |
+| `GH_EXECUTABLE` | `gh` | Path al ejecutable gh CLI |
+
+### Estructura de outputs (Fase 4)
+
+```
+data/outputs/<meeting_stem>/
+├── <stem>_transcript.json
+├── <stem>_result.json
+├── adr/*.md
+├── acta/*.md
+├── validation.json       ← estado HITL (pending/approved/rejected/edited)
+└── publish.json          ← resultado de publicación (branch, commit SHA, PR URL)
+```
