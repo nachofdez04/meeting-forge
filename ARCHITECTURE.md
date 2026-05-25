@@ -165,8 +165,77 @@ Toda la configuración pasa por variables de entorno cargadas vía `pydantic-set
 - **Retrieval quality**: precision@k contra un set anotado manualmente (¿están los chunks relevantes en el top-K?).
 - **Cobertura de provenance**: % de decisiones que reciben al menos una cita cuando la docs sí cubre el tema.
 
+## Fase 2: Generación de documentos con citas reales
+
+### Pipeline ampliado
+
+```
+          MeetingInsights (con sources: list[SourceRef])
+                     │
+                     ▼
+        [generation.DocumentGenerator]
+          ┌──────────┬─────────────┐
+          │          │             │
+     ADR/decisión  ADR         Acta
+      (LLM híbrido) consolidado  (template puro,
+          │       (sintetizado)  0 llamadas LLM)
+          ▼          │             │
+   _RawADR con       │         render_acta()
+   marcadores #N     │             │
+          │          └──────┬──────┘
+          ▼                 ▼
+   rewrite_markers   footnotes [^N]
+   #N → [^N]         deduplicados
+          │
+          ▼
+   GeneratedDocument (.md)
+   data/outputs/<meeting>/{adr,acta}/
+```
+
+### Componentes nuevos
+
+- `generation/schemas.py` — `GeneratedDocument`, `MeetingMetadata`, `GenerationMode`, `DocumentKind`.
+- `generation/citations.py` — `CitationRegistry` (dedupe por path+líneas), `rewrite_markers()` (#N→[^N]), `render_footnote_block()`, `escape_user_text()`.
+- `generation/filenames.py` — `slug()` (NFKD, injection-safe), `build_adr_filename()`, `build_acta_filename()`.
+- `generation/templates.py` — `render_adr_skeleton()` (string template), `render_acta()` (determinístico).
+- `generation/adr_strategy.py` — `AdrStrategy`: llama al LLM con prompt `adr_v1.md`, post-procesa marcadores, ensambla ADR.
+- `generation/acta_strategy.py` — `ActaStrategy`: renderiza acta sin LLM a partir de `MeetingInsights`.
+- `generation/generator.py` — `DocumentGenerator`: orquesta los tres modos, graceful failure por modo.
+- `prompts/generation/adr_v1.md` — prompt versionado para generar prosa de ADR con marcadores `#N`.
+
+### Decisiones de diseño
+
+- **Provenance reutilizada**: la Fase 2 no hace retrieval nuevo; consume los `SourceRef` ya resueltos en Fase 1.
+- **Marcadores `#N` → `[^N]`**: el LLM emite `#N` (mismo vocabulario que Fase 1); `rewrite_markers()` los convierte a footnotes Markdown. Los markers dentro de code fences se preservan.
+- **ADR consolidado sintetizado**: apila los ADRs por-decisión bajo un H1 común y deduplica el bloque de footnotes. Sin LLM extra.
+- **Acta template-only**: cero llamadas LLM. Las citas se inyectan mecánicamente a partir de `decision.sources` y `action.sources`.
+- **Contra inyección Markdown**: `escape_user_text()` escapa `[^` en texto generado por el LLM de Fase 1 para evitar colisiones de footnotes.
+- **Contador ADR per-run**: `adr-0001-{slug}.md`, scoped a la reunión. Sin estado global compartido — idempotente.
+- **ADR sin sources**: omite `## Referencias` (no placeholder).
+
+### Parámetros de configuración (Fase 2)
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `GENERATION_ENABLED` | `true` | Activa/desactiva la generación |
+| `GENERATION_MODES` | `adr-per-decision,acta` | Modos habilitados (CSV) |
+| `ADR_PROMPT_VERSION` | `v1` | Versión del prompt de ADR |
+| `GENERATION_MAX_TOKENS` | `4000` | Tope de tokens para generación |
+
+### Estructura de outputs
+
+```
+data/outputs/<meeting_stem>/
+├── <stem>_transcript.json
+├── <stem>_result.json          ← ahora incluye generated_documents[]
+├── adr/
+│   ├── adr-0001-{slug}.md
+│   └── adr-<stem>-consolidated.md
+└── acta/
+    └── acta-YYYY-MM-DD-<stem>.md
+```
+
 ## Próximas fases
 
-- **Fase 2 — Generación**: aprovechar los `sources` para generar ADRs/actas con citas reales (mkdocs-friendly). Plantillas en `prompts/generation/`.
 - **Fase 3 — UI**: Streamlit con transcript, insights y panel de evidencia (chunks recuperados).
 - **Fase 4 — Integración Git**: commits/PRs automáticos con human-in-the-loop (`validation/`).
