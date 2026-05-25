@@ -71,6 +71,15 @@ class Settings(BaseSettings):
             return [item.strip() for item in v.split(",") if item.strip()]
         return []
 
+    # --- Git Integration (Fase 4) ---
+    git_integration_enabled: bool = False
+    git_target_repo_path: Path | None = None
+    git_target_remote: str | None = None
+    git_docs_subdir: str = "docs/meetings"
+    git_base_branch: str = "main"
+    git_branch_prefix: str = "meeting-forge/"
+    gh_executable: str = "gh"
+
     # --- Logging ---
     log_level: str = "INFO"
 

@@ -5,8 +5,12 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..analysis.schemas import MeetingInsights
+
+if TYPE_CHECKING:
+    from ..git_integration.schemas import PublishResult
 
 
 @dataclass
@@ -108,6 +112,13 @@ def load_meeting(meeting_dir: Path) -> MeetingData:
         metadata=metadata,
         transcript_segments=segments,
     )
+
+
+def load_publish_state(meeting_dir: Path) -> "PublishResult | None":
+    """Lee publish.json si existe. Devuelve None si no hay publicación previa."""
+    from ..git_integration.publisher import load_publish_result
+
+    return load_publish_result(meeting_dir)
 
 
 def load_generated_docs(meeting_dir: Path) -> list[GeneratedDocView]:

@@ -7,6 +7,9 @@ from pathlib import Path
 import streamlit as st
 
 from meeting_forge.config import settings
+from meeting_forge.generation.schemas import MeetingMetadata
+from meeting_forge.git_integration import pr as pr_module
+from meeting_forge.git_integration import publisher as pub_module
 from meeting_forge.ui.evidence import read_source_slice
 from meeting_forge.ui.loader import (
     GeneratedDocView,
@@ -15,7 +18,10 @@ from meeting_forge.ui.loader import (
     list_meetings,
     load_generated_docs,
     load_meeting,
+    load_publish_state,
 )
+from meeting_forge.validation import store as val_store
+from meeting_forge.validation.schemas import MeetingValidationState, ValidationStatus
 
 _OUTPUTS_DIR: Path = settings.data_dir / "outputs"
 _PROJECT_ROOT: Path = settings.project_root
@@ -240,6 +246,147 @@ def _render_documentos(docs: list[GeneratedDocView]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Tab Validación (Fase 4)
+# ---------------------------------------------------------------------------
+
+_STATUS_ICON: dict[str, str] = {
+    ValidationStatus.PENDING.value: "⏳",
+    ValidationStatus.APPROVED.value: "✅",
+    ValidationStatus.REJECTED.value: "❌",
+    ValidationStatus.EDITED.value: "✏️",
+}
+
+
+def _render_validacion(
+    data: MeetingData, docs: list[GeneratedDocView], meeting_dir: Path
+) -> None:
+    """Tab Validación: aprobación/rechazo de documentos y publicación a Git."""
+    published = load_publish_state(meeting_dir)
+    if published:
+        pr_link = f" · [Abrir PR]({published.pr_url})" if published.pr_url else ""
+        st.success(
+            f"Publicado — Rama: `{published.branch}` · Commit: `{published.commit_sha}`{pr_link}"
+        )
+        st.divider()
+
+    if not docs:
+        st.info("No hay documentos generados para validar.")
+        return
+
+    state_key = f"val_state_{meeting_dir}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = val_store.initialize_pending(meeting_dir, docs)
+
+    state: MeetingValidationState = st.session_state[state_key]
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Aprobados", state.approved_count())
+    col2.metric("Rechazados", state.rejected_count())
+    col3.metric("Pendientes", state.pending_count())
+    st.divider()
+
+    for doc in docs:
+        record = state.records.get(doc.filename)
+        if record is None:
+            continue
+        icon = _STATUS_ICON.get(record.status.value, "?")
+        kind_label = "ADR" if doc.kind == "adr" else "Acta"
+        expanded = record.status == ValidationStatus.PENDING
+        with st.expander(f"{icon} [{kind_label}] {doc.filename}", expanded=expanded):
+            effective = val_store.get_effective_content(state, doc.filename, doc.markdown_content)
+            prev_tab, edit_tab = st.tabs(["Preview", "Editar"])
+            with prev_tab:
+                st.markdown(effective)
+            with edit_tab:
+                edited_text = st.text_area(
+                    "Contenido Markdown",
+                    value=effective,
+                    height=400,
+                    key=f"edit_{doc.filename}",
+                    label_visibility="collapsed",
+                )
+                if st.button("Guardar edición", key=f"save_{doc.filename}"):
+                    state = val_store.mark_approved(state, doc.filename, edited_content=edited_text)
+                    val_store.save_state(meeting_dir, state)
+                    st.session_state[state_key] = state
+                    st.rerun()
+
+            btn_col, reason_col, reset_col = st.columns([1, 2, 1])
+            with btn_col:
+                if st.button("Aprobar", key=f"approve_{doc.filename}", type="primary"):
+                    state = val_store.mark_approved(state, doc.filename)
+                    val_store.save_state(meeting_dir, state)
+                    st.session_state[state_key] = state
+                    st.rerun()
+            with reason_col:
+                reason = st.text_input(
+                    "Motivo",
+                    key=f"reason_{doc.filename}",
+                    placeholder="Motivo de rechazo (opcional)",
+                    label_visibility="collapsed",
+                )
+                if st.button("Rechazar", key=f"reject_{doc.filename}"):
+                    state = val_store.mark_rejected(state, doc.filename, reason=reason)
+                    val_store.save_state(meeting_dir, state)
+                    st.session_state[state_key] = state
+                    st.rerun()
+            with reset_col:
+                if st.button("Reset", key=f"reset_{doc.filename}"):
+                    state = val_store.reset_record(state, doc.filename)
+                    val_store.save_state(meeting_dir, state)
+                    st.session_state[state_key] = state
+                    st.rerun()
+
+            if record.validated_at:
+                st.caption(f"Validado: {record.validated_at.strftime('%Y-%m-%d %H:%M UTC')}")
+            if record.rejection_reason:
+                st.caption(f"Motivo: {record.rejection_reason}")
+
+    st.divider()
+
+    gh_ok = pr_module.is_gh_available(settings.gh_executable)
+    git_enabled = settings.git_integration_enabled
+    n_approved = state.approved_count()
+
+    if not git_enabled:
+        st.warning(
+            "La integración Git está desactivada. "
+            "Actívala con `GIT_INTEGRATION_ENABLED=true` en `.env`."
+        )
+    elif not gh_ok:
+        st.warning(
+            "El CLI `gh` no está disponible o no está autenticado. "
+            "Instálalo y ejecuta `gh auth login`."
+        )
+
+    publish_disabled = not git_enabled or not gh_ok or n_approved == 0
+    btn_label = f"Publicar a Git ({n_approved} doc{'s' if n_approved != 1 else ''})"
+
+    if st.button(btn_label, disabled=publish_disabled, type="primary"):
+        metadata = MeetingMetadata(
+            meeting_id=data.meeting_id,
+            title=data.meeting_id,
+        )
+        with st.spinner("Publicando en Git..."):
+            try:
+                result = pub_module.publish_meeting(
+                    meeting_dir=meeting_dir,
+                    metadata=metadata,
+                    validation_state=state,
+                    docs=docs,
+                )
+                if result.pr_url:
+                    st.success(f"Publicado — [Abrir PR]({result.pr_url})")
+                else:
+                    st.success(
+                        f"Publicado — Rama: `{result.branch}` · Commit: `{result.commit_sha}`"
+                    )
+                st.balloons()
+            except pub_module.PublishError as exc:
+                st.error(f"Error al publicar: {exc}")
+
+
+# ---------------------------------------------------------------------------
 # Punto de entrada
 # ---------------------------------------------------------------------------
 
@@ -267,8 +414,8 @@ def main() -> None:
 
     st.title(f"Reunión: {selected.meeting_id}")
 
-    tab_resumen, tab_transcript, tab_insights, tab_evidencia, tab_docs = st.tabs(
-        ["Resumen", "Transcript", "Insights", "Evidencia", "Documentos"]
+    tab_resumen, tab_transcript, tab_insights, tab_evidencia, tab_docs, tab_val = st.tabs(
+        ["Resumen", "Transcript", "Insights", "Evidencia", "Documentos", "Validación"]
     )
 
     with tab_resumen:
@@ -285,6 +432,9 @@ def main() -> None:
 
     with tab_docs:
         _render_documentos(docs)
+
+    with tab_val:
+        _render_validacion(data, docs, selected.meeting_dir)
 
 
 if __name__ == "__main__":
