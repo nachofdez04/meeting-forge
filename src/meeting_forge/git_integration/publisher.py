@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from loguru import logger
@@ -144,7 +143,7 @@ def publish_meeting(
         branch=request.branch_name,
         commit_sha=commit_sha,
         pr_url=pr_url,
-        published_at=datetime.now(tz=timezone.utc),
+        published_at=datetime.now(tz=UTC),
         files=[f for f, _ in request.files],
     )
     _write_publish_result(meeting_dir, result)

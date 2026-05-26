@@ -85,7 +85,7 @@ def list_meetings(base_dir: Path) -> list[MeetingSummary]:
                 mtime=result_path.stat().st_mtime,
             )
         )
-    summaries.sort(key=lambda s: s.mtime, reverse=True)
+    summaries.sort(key=lambda s: (s.mtime, s.meeting_id), reverse=True)
     return summaries
 
 
@@ -114,7 +114,7 @@ def load_meeting(meeting_dir: Path) -> MeetingData:
     )
 
 
-def load_publish_state(meeting_dir: Path) -> "PublishResult | None":
+def load_publish_state(meeting_dir: Path) -> PublishResult | None:
     """Lee publish.json si existe. Devuelve None si no hay publicación previa."""
     from ..git_integration.publisher import load_publish_result
 

@@ -59,7 +59,7 @@ class AnthropicProvider:
         if system:
             kwargs["system"] = system
 
-        response = self.client.messages.create(**kwargs)  # type: ignore[arg-type]
+        response = self.client.messages.create(**kwargs)  # type: ignore[call-overload]
         block = response.content[0]
         if not hasattr(block, "text"):
             raise RuntimeError("Respuesta de Anthropic sin contenido de texto")
@@ -118,9 +118,9 @@ class OpenAIProvider:
         )
         messages.append({"role": "user", "content": f"{prompt}\n\n{json_instruction}"})
 
-        response = self.client.chat.completions.create(
+        response = self.client.chat.completions.create(  # type: ignore[call-overload]
             model=self.model,
-            messages=messages,  # type: ignore[arg-type]
+            messages=messages,
             response_format={"type": "json_object"},
             max_tokens=4000,
         )

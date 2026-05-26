@@ -76,12 +76,12 @@ class ChromaVectorStore:
             ids=[c.chunk_id for c in chunks],
             documents=[c.text for c in chunks],
             metadatas=[_chunk_to_metadata(c) for c in chunks],
-            embeddings=embeddings,
+            embeddings=embeddings,  # type: ignore[arg-type]
         )
 
     def query(self, embedding: list[float], top_k: int) -> list[RetrievalResult]:
         res = self._collection.query(
-            query_embeddings=[embedding],
+            query_embeddings=[embedding],  # type: ignore[arg-type]
             n_results=top_k,
             include=["documents", "metadatas", "distances"],
         )

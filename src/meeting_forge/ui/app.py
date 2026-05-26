@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import ParamSpec, TypeVar, cast
 
 import streamlit as st
 
@@ -23,6 +25,9 @@ from meeting_forge.ui.loader import (
 from meeting_forge.validation import store as val_store
 from meeting_forge.validation.schemas import MeetingValidationState, ValidationStatus
 
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
 _OUTPUTS_DIR: Path = settings.data_dir / "outputs"
 _PROJECT_ROOT: Path = settings.project_root
 
@@ -32,12 +37,16 @@ _PROJECT_ROOT: Path = settings.project_root
 # ---------------------------------------------------------------------------
 
 
-@st.cache_data(show_spinner=False)
+def _cache(fn: Callable[_P, _R]) -> Callable[_P, _R]:
+    return cast(Callable[_P, _R], st.cache_data(show_spinner=False)(fn))
+
+
+@_cache
 def _cached_load_meeting(meeting_dir_str: str) -> MeetingData:
     return load_meeting(Path(meeting_dir_str))
 
 
-@st.cache_data(show_spinner=False)
+@_cache
 def _cached_load_docs(meeting_dir_str: str) -> list[GeneratedDocView]:
     return load_generated_docs(Path(meeting_dir_str))
 
@@ -366,6 +375,8 @@ def _render_validacion(
         metadata = MeetingMetadata(
             meeting_id=data.meeting_id,
             title=data.meeting_id,
+            date=None,
+            source_audio=None,
         )
         with st.spinner("Publicando en Git..."):
             try:

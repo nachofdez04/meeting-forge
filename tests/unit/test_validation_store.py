@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from meeting_forge.ui.loader import GeneratedDocView
 from meeting_forge.validation import store as val_store
 from meeting_forge.validation.schemas import MeetingValidationState, ValidationStatus

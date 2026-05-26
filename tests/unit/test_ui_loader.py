@@ -107,12 +107,15 @@ class TestListMeetings:
         assert summary.has_generated_docs is False
 
     def test_sorted_most_recent_first(self, tmp_path: Path) -> None:
+        import os
+
         dir_a = tmp_path / "antigua"
         dir_b = tmp_path / "reciente"
-        _write_result(dir_a, _minimal_result())
-        _write_result(dir_b, _minimal_result())
-        # Touch dir_b to ensure it has a later mtime
-        (dir_b / f"{dir_b.name}_result.json").touch()
+        path_a = _write_result(dir_a, _minimal_result())
+        path_b = _write_result(dir_b, _minimal_result())
+        # Set explicit timestamps to avoid mtime resolution issues on Windows
+        os.utime(path_a, (1_000_000, 1_000_000))
+        os.utime(path_b, (2_000_000, 2_000_000))
         summaries = list_meetings(tmp_path)
         assert summaries[0].meeting_id == "reciente"
 
