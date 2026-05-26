@@ -2,10 +2,10 @@
 
 Sistema de IA generativa para transcribir reuniones técnicas y extraer insights estructurados (decisiones, tareas, temas).
 
-## Estado: Fase 3 — UI Streamlit
+## Estado: Fase 4 — Human-in-the-loop + integración Git
 
-Pipeline end-to-end con contexto documental y visor interactivo:
-**Audio → Transcripción (Whisper) → Retrieval (ChromaDB + sentence-transformers) → Insights con citas (LLM) → Generación de ADRs/Actas → UI Streamlit**.
+Pipeline end-to-end con validación humana y publicación versionada:
+**Audio → Transcripción (Whisper) → Retrieval (ChromaDB + sentence-transformers) → Insights con citas (LLM) → Generación de ADRs/Actas → UI Streamlit → Validación humana → Publicación Git + PR**.
 
 ## Setup
 
@@ -93,6 +93,29 @@ uv run --group ui streamlit run src/meeting_forge/ui/app.py
 
 El visor navega los outputs ya procesados en `data/outputs/` y muestra: resumen ejecutivo, transcript con timestamps, decisiones y tareas con sus fuentes, panel de evidencia (texto real de los chunks citados) y los ADRs/Actas generados.
 
+### 4. Validación y publicación a Git
+
+Desde la UI puedes revisar, editar, aprobar o rechazar cada documento generado, y publicarlos a un repositorio Git con PR automático:
+
+**Prerrequisitos:**
+
+- `gh` CLI instalado y autenticado (`gh auth login`)
+- Variables de entorno en `.env`:
+
+```env
+GIT_INTEGRATION_ENABLED=true
+GIT_TARGET_REPO_PATH=/ruta/al/repo/destino
+GIT_BASE_BRANCH=main
+GIT_BRANCH_PREFIX=meeting-forge/
+```
+
+**Flujo:**
+
+1. Lanza la UI y selecciona una reunión con documentos generados.
+2. En el panel "Documentos Generados" valida cada documento (Aprobar / Editar / Rechazar).
+3. Con al menos un documento aprobado, pulsa "Publicar a Git".
+4. La UI crea una rama, hace commit, push y abre un PR en el repositorio destino.
+
 ## Tests
 
 ```bash
@@ -151,4 +174,4 @@ Ver [`ARCHITECTURE.md`](ARCHITECTURE.md) para detalles de arquitectura y decisio
 - [x] **Fase 1**: RAG sobre documentación Markdown (provenance con `sources`)
 - [x] **Fase 2**: Generación de ADRs y actas
 - [x] **Fase 3**: UI Streamlit (visor de reuniones procesadas)
-- [ ] **Fase 4**: Human-in-the-loop + integración Git
+- [x] **Fase 4**: Human-in-the-loop + integración Git

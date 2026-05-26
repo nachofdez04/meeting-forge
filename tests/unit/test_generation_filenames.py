@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
-
 from meeting_forge.generation.filenames import (
-    build_adr_filename,
     build_acta_filename,
+    build_adr_filename,
     build_consolidated_adr_filename,
     slug,
 )
 from meeting_forge.generation.schemas import MeetingMetadata
-
 
 # ---------------------------------------------------------------------------
 # slug()

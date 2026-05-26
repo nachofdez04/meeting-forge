@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -163,13 +162,13 @@ class TestLoadPublishResult:
         assert pub_module.load_publish_result(tmp_path) is None
 
     def test_returns_result_if_present(self, tmp_path: Path) -> None:
-        from datetime import datetime, timezone
+        from datetime import UTC, datetime
 
         result = PublishResult(
             branch="meeting-forge/test",
             commit_sha="abc1234",
             pr_url="https://github.com/pull/1",
-            published_at=datetime.now(tz=timezone.utc),
+            published_at=datetime.now(tz=UTC),
             files=["docs/meetings/test/adr/adr-0001.md"],
         )
         (tmp_path / "publish.json").write_text(result.model_dump_json(), encoding="utf-8")

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from ..rag.schemas import SourceRef
 
 
-class GenerationMode(str, Enum):
+class GenerationMode(StrEnum):
     """Modos de generación de documentos."""
 
     ADR_PER_DECISION = "adr-per-decision"
@@ -18,7 +18,7 @@ class GenerationMode(str, Enum):
     ACTA = "acta"
 
 
-class DocumentKind(str, Enum):
+class DocumentKind(StrEnum):
     """Tipo de documento generado."""
 
     ADR = "adr"

@@ -49,6 +49,7 @@ class WhisperTranscriber:
                 start=seg.start,
                 end=seg.end,
                 text=seg.text.strip(),
+                speaker=None,
             )
             for seg in segments_raw
         ]

@@ -7,7 +7,7 @@ El LLM rellena las secciones de prosa de los ADRs; las actas son 100% determiní
 from __future__ import annotations
 
 from ..analysis.schemas import ActionItem, Decision, MeetingInsights
-from .citations import CitationRegistry, escape_user_text, render_footnote_block
+from .citations import CitationRegistry, escape_user_text
 from .schemas import MeetingMetadata
 
 # ---------------------------------------------------------------------------

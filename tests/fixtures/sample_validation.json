@@ -1,0 +1,32 @@
+{
+  "records": {
+    "0.md": {
+      "filename": "0.md",
+      "status": "pending",
+      "edited_content": null,
+      "rejection_reason": null,
+      "validated_at": null
+    },
+    "1.md": {
+      "filename": "1.md",
+      "status": "pending",
+      "edited_content": null,
+      "rejection_reason": null,
+      "validated_at": null
+    },
+    "2.md": {
+      "filename": "2.md",
+      "status": "pending",
+      "edited_content": null,
+      "rejection_reason": null,
+      "validated_at": null
+    },
+    "3.md": {
+      "filename": "3.md",
+      "status": "pending",
+      "edited_content": null,
+      "rejection_reason": null,
+      "validated_at": null
+    }
+  }
+}

@@ -366,6 +366,8 @@ def _render_validacion(
         metadata = MeetingMetadata(
             meeting_id=data.meeting_id,
             title=data.meeting_id,
+            date=None,
+            source_audio=None,
         )
         with st.spinner("Publicando en Git..."):
             try:

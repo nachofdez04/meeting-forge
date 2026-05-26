@@ -21,7 +21,6 @@ from meeting_forge.analysis.schemas import MeetingInsights
 from meeting_forge.generation.generator import DocumentGenerator
 from meeting_forge.generation.schemas import (
     DocumentKind,
-    GeneratedDocument,
     GenerationMode,
     MeetingMetadata,
 )

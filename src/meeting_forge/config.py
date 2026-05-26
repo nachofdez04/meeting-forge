@@ -67,7 +67,8 @@ class Settings(BaseSettings):
             v = v.strip()
             if v.startswith("["):
                 import json
-                return json.loads(v)
+                result: list[str] = json.loads(v)
+                return result
             return [item.strip() for item in v.split(",") if item.strip()]
         return []
 

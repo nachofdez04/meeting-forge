@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ..ui.loader import GeneratedDocView
@@ -66,7 +65,7 @@ def mark_approved(
         record.status = ValidationStatus.APPROVED
         record.edited_content = None
     record.rejection_reason = None
-    record.validated_at = datetime.now(tz=timezone.utc)
+    record.validated_at = datetime.now(tz=UTC)
     state.records[filename] = record
     return state
 
@@ -81,7 +80,7 @@ def mark_rejected(
     record.status = ValidationStatus.REJECTED
     record.rejection_reason = reason or None
     record.edited_content = None
-    record.validated_at = datetime.now(tz=timezone.utc)
+    record.validated_at = datetime.now(tz=UTC)
     state.records[filename] = record
     return state
 

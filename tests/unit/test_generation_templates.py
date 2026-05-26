@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from meeting_forge.analysis.schemas import ActionItem, Decision, MeetingInsights
-from meeting_forge.generation.citations import CitationRegistry, render_footnote_block
+from meeting_forge.generation.citations import CitationRegistry
 from meeting_forge.generation.schemas import MeetingMetadata
-from meeting_forge.generation.templates import render_adr_skeleton, render_acta
+from meeting_forge.generation.templates import render_acta, render_adr_skeleton
 from meeting_forge.rag.schemas import SourceRef
 
 

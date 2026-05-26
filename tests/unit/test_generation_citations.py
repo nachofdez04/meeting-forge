@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from meeting_forge.generation.citations import (
     CitationRegistry,
     escape_user_text,
@@ -175,7 +173,7 @@ class TestRenderFootnoteBlock:
         reg.register(_ref("b.md", 1, 1))
         reg.register(_ref("c.md", 1, 1))
         block = render_footnote_block(reg, {3, 1})
-        lines = [l for l in block.splitlines() if l.strip()]
+        lines = [line for line in block.splitlines() if line.strip()]
         assert lines[0].startswith("[^1]:")
         assert lines[1].startswith("[^3]:")
 
