@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import ParamSpec, TypeVar, cast
 
 import streamlit as st
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 from meeting_forge.config import settings
 from meeting_forge.generation.schemas import MeetingMetadata
@@ -32,12 +37,16 @@ _PROJECT_ROOT: Path = settings.project_root
 # ---------------------------------------------------------------------------
 
 
-@st.cache_data(show_spinner=False)
+def _cache(fn: Callable[_P, _R]) -> Callable[_P, _R]:
+    return cast(Callable[_P, _R], st.cache_data(show_spinner=False)(fn))
+
+
+@_cache
 def _cached_load_meeting(meeting_dir_str: str) -> MeetingData:
     return load_meeting(Path(meeting_dir_str))
 
 
-@st.cache_data(show_spinner=False)
+@_cache
 def _cached_load_docs(meeting_dir_str: str) -> list[GeneratedDocView]:
     return load_generated_docs(Path(meeting_dir_str))
 
