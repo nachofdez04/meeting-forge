@@ -8,9 +8,6 @@ from typing import ParamSpec, TypeVar, cast
 
 import streamlit as st
 
-_P = ParamSpec("_P")
-_R = TypeVar("_R")
-
 from meeting_forge.config import settings
 from meeting_forge.generation.schemas import MeetingMetadata
 from meeting_forge.git_integration import pr as pr_module
@@ -27,6 +24,9 @@ from meeting_forge.ui.loader import (
 )
 from meeting_forge.validation import store as val_store
 from meeting_forge.validation.schemas import MeetingValidationState, ValidationStatus
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 _OUTPUTS_DIR: Path = settings.data_dir / "outputs"
 _PROJECT_ROOT: Path = settings.project_root
