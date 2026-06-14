@@ -29,3 +29,7 @@ class PublishResult(BaseModel):
     pr_url: str
     published_at: datetime
     files: list[str] = Field(description="Rutas relativas de archivos publicados en el repo")
+    compare_url: str = Field(
+        default="",
+        description="URL de 'compare' para abrir el PR manualmente si la creación con gh falló",
+    )

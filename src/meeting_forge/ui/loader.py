@@ -7,10 +7,26 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from loguru import logger
+
 from ..analysis.schemas import MeetingInsights
+from ..generation.schemas import (
+    DocumentKind,
+    GeneratedDocView,  # re-export (definido en la capa de dominio · TD1)
+)
 
 if TYPE_CHECKING:
     from ..git_integration.schemas import PublishResult
+
+__all__ = [
+    "GeneratedDocView",
+    "MeetingData",
+    "MeetingSummary",
+    "list_meetings",
+    "load_generated_docs",
+    "load_meeting",
+    "load_publish_state",
+]
 
 
 @dataclass
@@ -24,15 +40,6 @@ class MeetingSummary:
     n_actions: int
     has_generated_docs: bool
     mtime: float
-
-
-@dataclass
-class GeneratedDocView:
-    """Vista de un documento generado (ADR o Acta)."""
-
-    filename: str
-    kind: str  # "adr" | "acta"
-    markdown_content: str
 
 
 @dataclass
@@ -60,18 +67,15 @@ def list_meetings(base_dir: Path) -> list[MeetingSummary]:
         result_path = result_files[0]
         try:
             raw = json.loads(result_path.read_text(encoding="utf-8"))
-        except Exception:
+        except (OSError, ValueError) as exc:
+            logger.warning("Ignorando {p} (result.json ilegible): {e}", p=result_path, e=exc)
             continue
         insights_raw = raw.get("insights", {}) if isinstance(raw, dict) else {}
         n_decisions = (
-            len(insights_raw.get("decisions", []))
-            if isinstance(insights_raw, dict)
-            else 0
+            len(insights_raw.get("decisions", [])) if isinstance(insights_raw, dict) else 0
         )
         n_actions = (
-            len(insights_raw.get("action_items", []))
-            if isinstance(insights_raw, dict)
-            else 0
+            len(insights_raw.get("action_items", [])) if isinstance(insights_raw, dict) else 0
         )
         has_docs = (subdir / "adr").is_dir() or (subdir / "acta").is_dir()
         summaries.append(
@@ -124,7 +128,7 @@ def load_publish_state(meeting_dir: Path) -> PublishResult | None:
 def load_generated_docs(meeting_dir: Path) -> list[GeneratedDocView]:
     """Lee todos los .md en adr/ y acta/ de meeting_dir. Tolera ausencia de subdirs."""
     docs: list[GeneratedDocView] = []
-    for kind in ("adr", "acta"):
+    for kind in (k.value for k in DocumentKind):
         kind_dir = meeting_dir / kind
         if not kind_dir.is_dir():
             continue
@@ -133,11 +137,19 @@ def load_generated_docs(meeting_dir: Path) -> list[GeneratedDocView]:
                 content = md_file.read_text(encoding="utf-8")
             except OSError:
                 continue
+            diff_file = md_file.with_name(f"{md_file.name}.diff")
+            diff_text: str | None = None
+            if diff_file.exists():
+                try:
+                    diff_text = diff_file.read_text(encoding="utf-8")
+                except OSError:
+                    diff_text = None
             docs.append(
                 GeneratedDocView(
                     filename=md_file.name,
                     kind=kind,
                     markdown_content=content,
+                    diff=diff_text,
                 )
             )
     return docs

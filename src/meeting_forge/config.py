@@ -1,7 +1,7 @@
 """Configuración global de la aplicación usando Pydantic Settings."""
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -26,12 +26,19 @@ class Settings(BaseSettings):
     whisper_model_size: Literal["tiny", "base", "small", "medium", "large-v3"] = "medium"
     whisper_device: Literal["cpu", "cuda", "auto"] = "auto"
     whisper_compute_type: Literal["int8", "float16", "float32"] = "int8"
+    # Idioma del audio (None = autodetección de faster-whisper)
+    whisper_language: str | None = None
+    # Preprocesado opcional del audio con ffmpeg (mono + 16 kHz + loudnorm) antes de transcribir · F9
+    audio_preprocess_enabled: bool = False
 
     # --- LLM Provider ---
     llm_provider: Literal["anthropic", "openai", "ollama"] = "anthropic"
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     ollama_base_url: str = "http://localhost:11434"
+    # Reintentos ante errores transitorios del LLM (rate limit, timeout, 5xx) · F12
+    llm_max_retries: int = 3
+    llm_retry_base_delay: float = 1.0
 
     # --- Modelos ---
     anthropic_model: str = "claude-sonnet-4-20250514"
@@ -56,10 +63,21 @@ class Settings(BaseSettings):
     generation_modes: list[str] = ["adr-per-decision", "acta"]
     adr_prompt_version: str = "v1"
     generation_max_tokens: int = 4000
+    # Documentos existentes a actualizar en los modos roadmap-update / technical-doc-update (F5).
+    # Si se definen y existen, el pipeline propone un diff sobre ellos; si no, crea uno nuevo.
+    roadmap_path: Path | None = None
+    tech_doc_path: Path | None = None
 
-    @field_validator("generation_modes", mode="before")
+    # --- Automatización opcional (Fase C · F8) ---
+    # Desactivado por defecto: con HITL el usuario aprueba a mano. Si se activa, solo se auto-aprueban
+    # los tipos en `auto_approve_kinds` (default: solo actas, que son determinísticas).
+    auto_approve_enabled: bool = False
+    auto_approve_kinds: list[str] = ["acta"]
+    auto_publish_enabled: bool = False
+
+    @field_validator("generation_modes", "auto_approve_kinds", mode="before")
     @classmethod
-    def _parse_generation_modes(cls, v: object) -> list[str]:
+    def _parse_csv_or_json_list(cls, v: object) -> list[str]:
         """Acepta CSV ("adr-per-decision,acta") o lista JSON ("[\\"adr-per-decision\\"]")."""
         if isinstance(v, list):
             return [str(item) for item in v]
@@ -67,6 +85,7 @@ class Settings(BaseSettings):
             v = v.strip()
             if v.startswith("["):
                 import json
+
                 result: list[str] = json.loads(v)
                 return result
             return [item.strip() for item in v.split(",") if item.strip()]
@@ -80,15 +99,21 @@ class Settings(BaseSettings):
     git_base_branch: str = "main"
     git_branch_prefix: str = "meeting-forge/"
     gh_executable: str = "gh"
+    git_pr_draft: bool = False  # crea los PR como borrador (raíl para el modo automático · F8)
 
     # --- Logging ---
     log_level: str = "INFO"
 
-    def model_post_init(self, __context: Any) -> None:
-        """Crea los directorios de datos si no existen."""
-        for sub in ("raw", "transcripts", "outputs"):
-            (self.data_dir / sub).mkdir(parents=True, exist_ok=True)
-        self.chromadb_path.mkdir(parents=True, exist_ok=True)
-
 
 settings = Settings()
+
+
+def ensure_data_dirs() -> None:
+    """Crea los directorios de datos/índice si no existen.
+
+    Se invoca explícitamente desde los entrypoints (CLI/pipeline) en lugar de en `model_post_init`,
+    para que **importar el paquete no tenga efectos en el sistema de ficheros** (TD2).
+    """
+    for sub in ("raw", "transcripts", "outputs"):
+        (settings.data_dir / sub).mkdir(parents=True, exist_ok=True)
+    settings.chromadb_path.mkdir(parents=True, exist_ok=True)

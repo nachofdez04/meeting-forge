@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 from loguru import logger
 
@@ -68,13 +69,13 @@ def escape_user_text(text: str) -> str:
     return text.replace("[^", r"\[^")
 
 
-def rewrite_markers(text: str, registry: CitationRegistry) -> tuple[str, set[int]]:
-    """Reescribe marcadores `#N` → `[^N]` en *text*, ignorando los que estén en code fences.
+def rewrite_marker_text(text: str, resolve: Callable[[int], int | None]) -> tuple[str, set[int]]:
+    """Reescribe marcadores `#N` → `[^M]` donde `M = resolve(N)`.
 
-    Devuelve (texto_reescrito, conjunto_de_índices_usados).
-    Los marcadores fuera de rango se dropean con warning (mismo comportamiento que extractor.py).
+    Si `resolve(N)` devuelve None, deja `#N` intacto. Ignora los marcadores dentro de code fences.
+    Devuelve (texto_reescrito, conjunto de índices `M` realmente usados). Helper común para no
+    duplicar esta lógica entre la reescritura por-registro y la remapeada local→global (TD3).
     """
-    # Protege los bloques de código sustituyéndolos por placeholders
     fences: list[str] = []
 
     def _stash(m: re.Match[str]) -> str:
@@ -82,24 +83,32 @@ def rewrite_markers(text: str, registry: CitationRegistry) -> tuple[str, set[int
         return f"\x00FENCE{len(fences) - 1}\x00"
 
     protected = _CODE_FENCE_RE.sub(_stash, text)
-
     used: set[int] = set()
 
     def _replace(m: re.Match[str]) -> str:
-        idx = int(m.group(1))
-        if registry.get(idx) is None:
-            logger.warning("Marcador #{}  fuera de rango en generación (máx {})", idx, registry.size)
+        target = resolve(int(m.group(1)))
+        if target is None:
             return m.group(0)  # deja el marker original en lugar de borrarlo silenciosamente
-        used.add(idx)
-        return f"[^{idx}]"
+        used.add(target)
+        return f"[^{target}]"
 
     rewritten = _MARKER_RE.sub(_replace, protected)
-
-    # Restaura los bloques de código
     for i, fence in enumerate(fences):
         rewritten = rewritten.replace(f"\x00FENCE{i}\x00", fence)
 
     return rewritten, used
+
+
+def rewrite_markers(text: str, registry: CitationRegistry) -> tuple[str, set[int]]:
+    """Reescribe `#N` → `[^N]` validando contra *registry*; los fuera de rango se dejan con warning."""
+
+    def _resolve(idx: int) -> int | None:
+        if registry.get(idx) is None:
+            logger.warning("Marcador #{} fuera de rango en generación (máx {})", idx, registry.size)
+            return None
+        return idx
+
+    return rewrite_marker_text(text, _resolve)
 
 
 def render_footnote_block(registry: CitationRegistry, used_indices: set[int]) -> str:

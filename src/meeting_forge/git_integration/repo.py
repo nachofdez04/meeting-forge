@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
+
+# Fuerza mensajes de git en inglés (B9): así las comprobaciones por texto (p.ej. "no tracking
+# information") no dependen del idioma configurado en la máquina del usuario.
+_GIT_ENV = {**os.environ, "LC_ALL": "C", "LANG": "C"}
 
 
 class GitOperationError(RuntimeError):
@@ -22,6 +27,7 @@ def _run(args: list[str], cwd: Path, check: bool = True) -> subprocess.Completed
         cwd=cwd,
         capture_output=True,
         text=True,
+        env=_GIT_ENV,
     )
     if check and result.returncode != 0:
         raise GitOperationError(
@@ -48,9 +54,7 @@ def ensure_repo(target_path: Path, remote: str | None = None) -> Path:
         target_path.parent.mkdir(parents=True, exist_ok=True)
         _run(["git", "clone", remote, str(target_path)], cwd=target_path.parent)
     elif not git_dir.exists():
-        raise GitOperationError(
-            f"{target_path} existe pero no es un repositorio git (falta .git/)"
-        )
+        raise GitOperationError(f"{target_path} existe pero no es un repositorio git (falta .git/)")
     elif remote:
         _run(["git", "fetch", "--all", "--prune"], cwd=target_path)
     return target_path
@@ -60,6 +64,31 @@ def get_current_branch(repo: Path) -> str:
     """Devuelve el nombre de la rama actual."""
     result = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo)
     return result.stdout.strip()
+
+
+def get_remote_url(repo: Path, remote: str = "origin") -> str | None:
+    """Devuelve la URL del remote indicado, o None si no está configurado."""
+    result = _run(["git", "remote", "get-url", remote], cwd=repo, check=False)
+    url = result.stdout.strip()
+    return url or None
+
+
+def is_clean(repo: Path) -> bool:
+    """True si el working tree y el index están limpios (sin cambios sin commitear)."""
+    result = _run(["git", "status", "--porcelain"], cwd=repo)
+    return result.stdout.strip() == ""
+
+
+def ensure_clean(repo: Path) -> None:
+    """Lanza GitOperationError si el repo destino tiene cambios sin commitear (F7).
+
+    Evita mezclar trabajo manual del usuario con los documentos auto-generados.
+    """
+    if not is_clean(repo):
+        raise GitOperationError(
+            "El repositorio destino tiene cambios sin commitear; "
+            "resuélvelos (commit o stash) antes de publicar."
+        )
 
 
 def checkout_branch(repo: Path, branch: str, base: str | None = None) -> None:
@@ -86,10 +115,19 @@ def pull(repo: Path) -> None:
 
 
 def write_files(repo: Path, files: list[tuple[str, str]]) -> list[Path]:
-    """Escribe (ruta_relativa, contenido) en el repo. Crea subdirectorios si hacen falta."""
+    """Escribe (ruta_relativa, contenido) en el repo. Crea subdirectorios si hacen falta.
+
+    TD9: cada destino se resuelve y se verifica que quede dentro del repo, bloqueando rutas con
+    `..` o absolutas (defensa contra path traversal al escribir en un repositorio externo).
+    """
+    repo_resolved = repo.resolve()
     written: list[Path] = []
     for rel_path, content in files:
-        target = repo / rel_path
+        target = (repo / rel_path).resolve()
+        if not target.is_relative_to(repo_resolved):
+            raise GitOperationError(
+                f"Ruta fuera del repositorio destino (path traversal bloqueado): {rel_path}"
+            )
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
         written.append(target)
@@ -97,9 +135,21 @@ def write_files(repo: Path, files: list[tuple[str, str]]) -> list[Path]:
 
 
 def add_and_commit(repo: Path, paths: list[Path], message: str) -> str:
-    """Hace git add de los paths y crea el commit. Devuelve el SHA corto."""
-    str_paths = [str(p.relative_to(repo)) for p in paths]
-    _run(["git", "add", "--"] + str_paths, cwd=repo)
+    """Hace git add de los paths y crea el commit. Devuelve el SHA corto.
+
+    B10: si tras el `git add` no hay nada staged (el contenido aprobado ya coincide con el repo),
+    no se intenta commitear y se lanza un error claro en vez del mensaje confuso de git.
+    """
+    repo_resolved = repo.resolve()
+    str_paths = [str(p.resolve().relative_to(repo_resolved)) for p in paths]
+    _run(["git", "add", "--", *str_paths], cwd=repo)
+
+    staged = _run(["git", "diff", "--cached", "--quiet"], cwd=repo, check=False)
+    if staged.returncode == 0:
+        raise GitOperationError(
+            "No hay cambios que publicar: el contenido aprobado ya coincide con el del repositorio."
+        )
+
     _run(["git", "commit", "-m", message], cwd=repo)
     result = _run(["git", "rev-parse", "--short", "HEAD"], cwd=repo)
     return result.stdout.strip()

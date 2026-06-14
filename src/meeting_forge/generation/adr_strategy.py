@@ -8,7 +8,7 @@ Flujo híbrido:
 
 from __future__ import annotations
 
-import re
+from collections.abc import Callable
 
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -16,50 +16,24 @@ from pydantic import BaseModel, Field
 from ..analysis.llm_client import LLMProvider, get_provider
 from ..analysis.schemas import Decision, MeetingInsights
 from ..config import settings
-from .citations import CitationRegistry, render_footnote_block, rewrite_markers
+from .citations import (
+    CitationRegistry,
+    render_footnote_block,
+    rewrite_marker_text,
+    rewrite_markers,
+)
 from .filenames import build_adr_filename, build_consolidated_adr_filename
 from .schemas import DocumentKind, GeneratedDocument, GenerationMode, MeetingMetadata
 from .templates import render_adr_skeleton
 
-# ---------------------------------------------------------------------------
-# Schema interno: el LLM emite texto con marcadores #N, nunca SourceRef
-# ---------------------------------------------------------------------------
 
-_MARKER_RE = re.compile(r"#(\d+)")
-_CODE_FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+def _remap_resolver(mapping: dict[int, int]) -> Callable[[int], int | None]:
+    """Resolver `#local → [^global]` para el ADR consolidado (definido fuera del bucle · sin B023)."""
 
+    def _resolve(local_idx: int) -> int | None:
+        return mapping.get(local_idx)
 
-def _remap_markers(
-    text: str, local_to_global: dict[int, int]
-) -> tuple[str, set[int]]:
-    """Reescribe marcadores #local_idx → [^global_idx] según el mapeo dado.
-
-    Ignora los markers dentro de code fences y los out-of-range (los deja tal cual).
-    Devuelve (texto_reescrito, conjunto_de_índices_globales_usados).
-    """
-    fences: list[str] = []
-
-    def _stash(m: re.Match[str]) -> str:
-        fences.append(m.group(0))
-        return f"\x00FENCE{len(fences) - 1}\x00"
-
-    protected = _CODE_FENCE_RE.sub(_stash, text)
-    used_global: set[int] = set()
-
-    def _replace(m: re.Match[str]) -> str:
-        local_idx = int(m.group(1))
-        global_idx = local_to_global.get(local_idx)
-        if global_idx is None:
-            logger.warning("Marcador #{} sin mapeo global en ADR consolidado", local_idx)
-            return m.group(0)
-        used_global.add(global_idx)
-        return f"[^{global_idx}]"
-
-    rewritten = _MARKER_RE.sub(_replace, protected)
-    for i, fence in enumerate(fences):
-        rewritten = rewritten.replace(f"\x00FENCE{i}\x00", fence)
-
-    return rewritten, used_global
+    return _resolve
 
 
 _DEFAULT_PROMPT = """\
@@ -79,7 +53,9 @@ class _RawADR(BaseModel):
     status: str = Field(default="Propuesto")
     context_md: str = Field(..., description="Sección Contexto con marcadores #N opcionales")
     decision_md: str = Field(..., description="Sección Decisión con marcadores #N opcionales")
-    consequences_md: str = Field(..., description="Sección Consecuencias con marcadores #N opcionales")
+    consequences_md: str = Field(
+        ..., description="Sección Consecuencias con marcadores #N opcionales"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +73,9 @@ class AdrStrategy:
     ) -> None:
         self.provider: LLMProvider = provider or get_provider()
         self._prompt_template = self._load_prompt(prompt_version)
+        # TD6: caché de prosa por decisión para no repetir la llamada LLM entre el ADR
+        # por-decisión y el consolidado (mismas decisiones → N llamadas en vez de 2N).
+        self._raw_cache: dict[str, _RawADR] = {}
 
     # ------------------------------------------------------------------
     # Prompt loading
@@ -127,8 +106,16 @@ class AdrStrategy:
                 total=len(insights.decisions),
                 title=decision.title,
             )
-            doc = self._build_adr_for_decision(decision, counter, metadata)
-            docs.append(doc)
+            # TD5: un fallo del LLM en una decisión no debe tirar el resto de ADRs del modo.
+            try:
+                doc = self._build_adr_for_decision(decision, counter, metadata)
+                docs.append(doc)
+            except Exception as exc:
+                logger.error(
+                    "Error generando ADR para '{title}': {e}. Se omite esta decisión.",
+                    title=decision.title,
+                    e=exc,
+                )
         return docs
 
     def _build_adr_for_decision(
@@ -240,9 +227,10 @@ class AdrStrategy:
                 for local_idx, ref in enumerate(decision.sources, start=1)
             }
 
-            context_final, used_c = _remap_markers(raw.context_md, local_to_global)
-            decision_final, used_d = _remap_markers(raw.decision_md, local_to_global)
-            consequences_final, used_k = _remap_markers(raw.consequences_md, local_to_global)
+            resolver = _remap_resolver(local_to_global)
+            context_final, used_c = rewrite_marker_text(raw.context_md, resolver)
+            decision_final, used_d = rewrite_marker_text(raw.decision_md, resolver)
+            consequences_final, used_k = rewrite_marker_text(raw.consequences_md, resolver)
             all_global_used |= used_c | used_d | used_k
 
             title = raw.title if raw.title else decision.title
@@ -293,7 +281,17 @@ class AdrStrategy:
     # ------------------------------------------------------------------
 
     def _call_llm(self, decision: Decision, registry: CitationRegistry) -> _RawADR:
-        """Construye el prompt y llama al LLM. Devuelve _RawADR con prosa + marcadores #N."""
+        """Construye el prompt y llama al LLM. Devuelve _RawADR con prosa + marcadores #N.
+
+        Memoiza por contenido de la decisión (TD6): el prompt es función pura de la decisión, así
+        que el consolidado reutiliza la prosa ya generada por el modo por-decisión.
+        """
+        cache_key = self._decision_key(decision)
+        cached = self._raw_cache.get(cache_key)
+        if cached is not None:
+            logger.debug("ADR reutilizado de caché para '{title}'", title=decision.title)
+            return cached
+
         sources_block = (
             registry.build_sources_block() if registry.size > 0 else "(sin evidencia documental)"
         )
@@ -322,4 +320,11 @@ class AdrStrategy:
             c=len(raw.context_md),
             k=len(raw.consequences_md),
         )
+        self._raw_cache[cache_key] = raw
         return raw
+
+    @staticmethod
+    def _decision_key(decision: Decision) -> str:
+        """Clave de caché por contenido de la decisión (título + descripción + fuentes)."""
+        sources = "|".join(f"{s.source_path}:{s.line_start}-{s.line_end}" for s in decision.sources)
+        return f"{decision.title}\x1f{decision.description}\x1f{sources}"

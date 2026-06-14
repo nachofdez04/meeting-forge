@@ -8,7 +8,8 @@ from ..analysis.llm_client import LLMProvider
 from ..analysis.schemas import MeetingInsights
 from .acta_strategy import ActaStrategy
 from .adr_strategy import AdrStrategy
-from .schemas import GeneratedDocument, GenerationMode, MeetingMetadata
+from .schemas import DocumentKind, GeneratedDocument, GenerationMode, MeetingMetadata
+from .update_strategy import UpdateStrategy
 
 
 class DocumentGenerator:
@@ -29,6 +30,7 @@ class DocumentGenerator:
     ) -> None:
         self._adr = AdrStrategy(provider=provider, prompt_version=adr_prompt_version)
         self._acta = ActaStrategy()
+        self._update = UpdateStrategy(provider=provider)
 
     # ------------------------------------------------------------------
     # Entry point principal
@@ -39,11 +41,14 @@ class DocumentGenerator:
         insights: MeetingInsights,
         metadata: MeetingMetadata,
         modes: list[GenerationMode],
+        existing_docs: dict[DocumentKind, str] | None = None,
     ) -> list[GeneratedDocument]:
         """Genera los documentos para los modos solicitados.
 
         El orden de los documentos en la lista de retorno sigue el orden de `modes`.
         Si un modo no produce ningún documento (ej. consolidated sin decisiones), se omite.
+        `existing_docs` aporta el contenido actual de roadmap/doc técnica para los modos de
+        actualización (F5); si falta, esos modos crean el documento desde cero.
         """
         if not modes:
             logger.warning("generate() llamado sin modos — no se produce ningún documento")
@@ -59,7 +64,7 @@ class DocumentGenerator:
 
         for mode in modes:
             try:
-                new_docs = self._dispatch(mode, insights, metadata)
+                new_docs = self._dispatch(mode, insights, metadata, existing_docs)
                 docs.extend(new_docs)
                 logger.info(
                     "Modo {mode}: {n} documento(s) generado(s)",
@@ -104,6 +109,31 @@ class DocumentGenerator:
         """Acta de la reunión (siempre produce un documento, incluso si insights está vacío)."""
         return self._acta.generate(insights, metadata)
 
+    def generate_roadmap_update(
+        self,
+        insights: MeetingInsights,
+        metadata: MeetingMetadata,
+        existing_content: str = "",
+    ) -> GeneratedDocument:
+        """Roadmap actualizado a partir de la reunión (o creado si no existe)."""
+        return self._update.generate(
+            insights, metadata, kind=DocumentKind.ROADMAP, existing_content=existing_content
+        )
+
+    def generate_technical_doc_update(
+        self,
+        insights: MeetingInsights,
+        metadata: MeetingMetadata,
+        existing_content: str = "",
+    ) -> GeneratedDocument:
+        """Documentación técnica actualizada a partir de la reunión (o creada si no existe)."""
+        return self._update.generate(
+            insights,
+            metadata,
+            kind=DocumentKind.TECHNICAL_DOC,
+            existing_content=existing_content,
+        )
+
     # ------------------------------------------------------------------
     # Dispatcher interno
     # ------------------------------------------------------------------
@@ -113,6 +143,7 @@ class DocumentGenerator:
         mode: GenerationMode,
         insights: MeetingInsights,
         metadata: MeetingMetadata,
+        existing_docs: dict[DocumentKind, str] | None = None,
     ) -> list[GeneratedDocument]:
         if mode == GenerationMode.ADR_PER_DECISION:
             return self.generate_adr_per_decision(insights, metadata)
@@ -123,5 +154,14 @@ class DocumentGenerator:
 
         if mode == GenerationMode.ACTA:
             return [self.generate_acta(insights, metadata)]
+
+        docs = existing_docs or {}
+        if mode == GenerationMode.ROADMAP_UPDATE:
+            content = docs.get(DocumentKind.ROADMAP, "")
+            return [self.generate_roadmap_update(insights, metadata, content)]
+
+        if mode == GenerationMode.TECHNICAL_DOC_UPDATE:
+            content = docs.get(DocumentKind.TECHNICAL_DOC, "")
+            return [self.generate_technical_doc_update(insights, metadata, content)]
 
         raise ValueError(f"Modo de generación desconocido: {mode!r}")

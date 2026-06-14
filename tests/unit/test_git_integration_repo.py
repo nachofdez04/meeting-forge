@@ -12,7 +12,9 @@ from meeting_forge.git_integration.repo import (
     GitOperationError,
     add_and_commit,
     checkout_branch,
+    ensure_clean,
     ensure_repo,
+    is_clean,
     write_files,
 )
 
@@ -26,7 +28,10 @@ def _init_repo(path: Path, initial_branch: str = "main") -> Path:
     path.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-b", initial_branch], cwd=path, capture_output=True, check=True)
     subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=path, capture_output=True, check=True
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=path,
+        capture_output=True,
+        check=True,
     )
     subprocess.run(
         ["git", "config", "user.name", "Test User"], cwd=path, capture_output=True, check=True
@@ -67,7 +72,9 @@ class TestCheckoutBranch:
 
     def test_switches_to_existing_branch(self, tmp_path: Path) -> None:
         repo = _init_repo(tmp_path / "repo")
-        subprocess.run(["git", "checkout", "-b", "existing"], cwd=repo, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "checkout", "-b", "existing"], cwd=repo, capture_output=True, check=True
+        )
         subprocess.run(["git", "checkout", "main"], cwd=repo, capture_output=True, check=True)
         checkout_branch(repo, "existing")
         result = subprocess.run(
@@ -88,6 +95,13 @@ class TestWriteFiles:
         write_files(repo, [("deep/nested/dir/file.md", "content")])
         assert (repo / "deep" / "nested" / "dir" / "file.md").exists()
 
+    def test_blocks_path_traversal(self, tmp_path: Path) -> None:
+        # TD9: una ruta con `..` que escape del repo destino debe bloquearse.
+        repo = _init_repo(tmp_path / "repo")
+        with pytest.raises(GitOperationError, match="path traversal"):
+            write_files(repo, [("../escape.md", "x")])
+        assert not (tmp_path / "escape.md").exists()
+
 
 class TestAddAndCommit:
     def test_creates_commit(self, tmp_path: Path) -> None:
@@ -105,3 +119,27 @@ class TestAddAndCommit:
         paths = write_files(repo, [("f.md", "x")])
         sha = add_and_commit(repo, paths, "msg")
         assert len(sha) <= 12
+
+    def test_no_changes_raises(self, tmp_path: Path) -> None:
+        # B10: reescribir el mismo contenido no deja nada staged → error claro, no crash de git.
+        repo = _init_repo(tmp_path / "repo")
+        paths = write_files(repo, [("dup.md", "same")])
+        add_and_commit(repo, paths, "first")
+        paths_again = write_files(repo, [("dup.md", "same")])
+        with pytest.raises(GitOperationError, match="No hay cambios que publicar"):
+            add_and_commit(repo, paths_again, "second")
+
+
+class TestCleanliness:
+    def test_clean_repo_passes(self, tmp_path: Path) -> None:
+        # F7: un repo recién inicializado está limpio.
+        repo = _init_repo(tmp_path / "repo")
+        assert is_clean(repo) is True
+        ensure_clean(repo)  # no debe lanzar
+
+    def test_dirty_repo_detected(self, tmp_path: Path) -> None:
+        repo = _init_repo(tmp_path / "repo")
+        (repo / "untracked.md").write_text("cambios sin commitear", encoding="utf-8")
+        assert is_clean(repo) is False
+        with pytest.raises(GitOperationError, match="sin commitear"):
+            ensure_clean(repo)

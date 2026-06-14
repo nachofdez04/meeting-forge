@@ -1,6 +1,10 @@
 """Tests para Settings y configuración global."""
 
-from meeting_forge.config import Settings, settings
+from pathlib import Path
+
+import pytest
+
+from meeting_forge.config import Settings, ensure_data_dirs, settings
 
 
 def test_settings_defaults() -> None:
@@ -12,14 +16,21 @@ def test_settings_defaults() -> None:
     assert s.llm_provider == "anthropic"
     assert s.ollama_base_url == "http://localhost:11434"
     assert s.log_level == "INFO"
+    # TD2: instanciar Settings no debe tener efectos en el sistema de ficheros.
+    assert s.whisper_language is None
 
 
-def test_settings_creates_data_directories() -> None:
-    """model_post_init debe crear data/{raw,transcripts,outputs}."""
-    assert settings.data_dir.exists()
-    assert (settings.data_dir / "raw").exists()
-    assert (settings.data_dir / "transcripts").exists()
-    assert (settings.data_dir / "outputs").exists()
+def test_ensure_data_dirs_creates_directories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ensure_data_dirs() crea data/{raw,transcripts,outputs} + chromadb (TD2)."""
+    monkeypatch.setattr(settings, "data_dir", tmp_path / "data")
+    monkeypatch.setattr(settings, "chromadb_path", tmp_path / "data" / "chromadb")
+    ensure_data_dirs()
+    assert (tmp_path / "data" / "raw").exists()
+    assert (tmp_path / "data" / "transcripts").exists()
+    assert (tmp_path / "data" / "outputs").exists()
+    assert (tmp_path / "data" / "chromadb").exists()
 
 
 def test_settings_prompts_dir_path() -> None:

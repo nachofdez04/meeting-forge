@@ -1,0 +1,36 @@
+{
+  "transcription": [
+    {
+      "reference": "el equipo decide adoptar chromadb para el indice vectorial",
+      "hypothesis": "el equipo decide adoptar chroma db para el indice vectorial"
+    },
+    {
+      "reference": "usaremos faster whisper para la transcripcion local",
+      "hypothesis": "usaremos faster whisper para la transcripcion local"
+    }
+  ],
+  "extraction": [
+    {
+      "gold_decisions": [
+        "Adoptar ChromaDB como vector store",
+        "Usar faster-whisper para la transcripcion"
+      ],
+      "predicted_decisions": [
+        "Adoptar ChromaDB como vector store del proyecto",
+        "Migrar la base de datos a Postgres"
+      ],
+      "gold_actions": [
+        "Nacho prepara el script de indexacion"
+      ],
+      "predicted_actions": [
+        "Nacho prepara el script de indexacion"
+      ]
+    }
+  ],
+  "retrieval": [
+    {
+      "retrieved": ["docs/rag.md", "docs/intro.md", "docs/git.md"],
+      "relevant": ["docs/rag.md", "docs/embeddings.md"]
+    }
+  ]
+}

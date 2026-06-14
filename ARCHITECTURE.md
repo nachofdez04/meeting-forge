@@ -87,7 +87,7 @@ Sistema modular para transformar reuniones técnicas en documentación estructur
 | Lenguaje | Python 3.11+ |
 | Gestión deps | uv |
 | Transcripción ASR | faster-whisper |
-| LLM | Anthropic Claude, OpenAI GPT (Ollama planificado) |
+| LLM | Anthropic Claude, OpenAI GPT, Ollama (API compatible con OpenAI) |
 | Validación | Pydantic v2 |
 | Settings | pydantic-settings |
 | CLI | typer |

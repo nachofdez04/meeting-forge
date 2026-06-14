@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import ParamSpec, TypeVar, cast
+from typing import Any, ParamSpec, TypeVar, cast
 
 import streamlit as st
 
 from meeting_forge.config import settings
+from meeting_forge.generation.diffing import unified_md_diff
 from meeting_forge.generation.schemas import MeetingMetadata
 from meeting_forge.git_integration import pr as pr_module
 from meeting_forge.git_integration import publisher as pub_module
@@ -30,6 +31,13 @@ _R = TypeVar("_R")
 
 _OUTPUTS_DIR: Path = settings.data_dir / "outputs"
 _PROJECT_ROOT: Path = settings.project_root
+
+_KIND_LABELS: dict[str, str] = {
+    "adr": "ADR",
+    "acta": "Acta",
+    "roadmap": "Roadmap",
+    "technical-doc": "Doc técnica",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -57,14 +65,19 @@ def _cached_load_docs(meeting_dir_str: str) -> list[GeneratedDocView]:
 
 
 def _render_sidebar(meetings: list[MeetingSummary]) -> MeetingSummary:
-    """Renderiza el selector de reunión y los metadatos en el sidebar."""
-    st.sidebar.title("MeetingForge")
-    st.sidebar.caption("Visor de reuniones procesadas")
-
+    """Renderiza el selector de reunión en el sidebar (preselecciona la recién procesada)."""
     labels = [m.meeting_id for m in meetings]
+    default_idx = 0
+    target = st.session_state.get("selected_meeting_id")
+    if target:
+        for i, summary in enumerate(meetings):
+            if summary.meeting_id == target:
+                default_idx = i
+                break
     idx_raw = st.sidebar.selectbox(
         "Selecciona reunión",
         range(len(labels)),
+        index=default_idx,
         format_func=lambda i: labels[i],
     )
     idx: int = int(idx_raw) if idx_raw is not None else 0
@@ -136,9 +149,7 @@ def _render_source_refs(sources: list[object]) -> None:
     with st.expander(f"Fuentes ({len(source_refs)})"):
         for src in source_refs:
             breadcrumb = " > ".join(src.section_path) if src.section_path else "—"
-            st.caption(
-                f"`{src.source_path}` — L{src.line_start}–{src.line_end} — _{breadcrumb}_"
-            )
+            st.caption(f"`{src.source_path}` — L{src.line_start}–{src.line_end} — _{breadcrumb}_")
 
 
 def _render_insights(data: MeetingData) -> None:
@@ -182,9 +193,7 @@ def _render_insights(data: MeetingData) -> None:
 def _render_evidencia(data: MeetingData) -> None:
     """Tab Evidencia: rodajas de los archivos fuente citados por decisiones y tareas."""
     items = [
-        ("Decisión", dec.title, dec.sources)
-        for dec in data.insights.decisions
-        if dec.sources
+        ("Decisión", dec.title, dec.sources) for dec in data.insights.decisions if dec.sources
     ] + [
         (
             "Tarea",
@@ -215,9 +224,7 @@ def _render_evidencia(data: MeetingData) -> None:
     for src in sources:
         breadcrumb = " > ".join(src.section_path) if src.section_path else "sin sección"
         st.markdown(
-            f"**`{src.source_path}`** — "
-            f"Líneas {src.line_start}–{src.line_end} — "
-            f"_{breadcrumb}_"
+            f"**`{src.source_path}`** — Líneas {src.line_start}–{src.line_end} — _{breadcrumb}_"
         )
         result = read_source_slice(
             source_path=src.source_path,
@@ -242,8 +249,11 @@ def _render_documentos(docs: list[GeneratedDocView]) -> None:
         return
 
     for doc in docs:
-        kind_label = "ADR" if doc.kind == "adr" else "Acta"
+        kind_label = _KIND_LABELS.get(doc.kind, doc.kind.upper())
         with st.expander(f"[{kind_label}] {doc.filename}"):
+            if doc.diff:
+                with st.expander("Cambios propuestos (diff)"):
+                    st.code(doc.diff, language="diff")
             st.markdown(doc.markdown_content)
             st.download_button(
                 label=f"Descargar {doc.filename}",
@@ -266,13 +276,16 @@ _STATUS_ICON: dict[str, str] = {
 }
 
 
-def _render_validacion(
-    data: MeetingData, docs: list[GeneratedDocView], meeting_dir: Path
-) -> None:
+def _render_validacion(data: MeetingData, docs: list[GeneratedDocView], meeting_dir: Path) -> None:
     """Tab Validación: aprobación/rechazo de documentos y publicación a Git."""
     published = load_publish_state(meeting_dir)
     if published:
-        pr_link = f" · [Abrir PR]({published.pr_url})" if published.pr_url else ""
+        if published.pr_url:
+            pr_link = f" · [Abrir PR]({published.pr_url})"
+        elif published.compare_url:
+            pr_link = f" · [Abrir PR (compare)]({published.compare_url})"
+        else:
+            pr_link = ""
         st.success(
             f"Publicado — Rama: `{published.branch}` · Commit: `{published.commit_sha}`{pr_link}"
         )
@@ -299,12 +312,15 @@ def _render_validacion(
         if record is None:
             continue
         icon = _STATUS_ICON.get(record.status.value, "?")
-        kind_label = "ADR" if doc.kind == "adr" else "Acta"
+        kind_label = _KIND_LABELS.get(doc.kind, doc.kind.upper())
         expanded = record.status == ValidationStatus.PENDING
         with st.expander(f"{icon} [{kind_label}] {doc.filename}", expanded=expanded):
             effective = val_store.get_effective_content(state, doc.filename, doc.markdown_content)
             prev_tab, edit_tab = st.tabs(["Preview", "Editar"])
             with prev_tab:
+                if doc.diff:
+                    st.caption("Cambios propuestos vs documento existente:")
+                    st.code(doc.diff, language="diff")
                 st.markdown(effective)
             with edit_tab:
                 edited_text = st.text_area(
@@ -314,7 +330,13 @@ def _render_validacion(
                     key=f"edit_{doc.filename}",
                     label_visibility="collapsed",
                 )
-                if st.button("Guardar edición", key=f"save_{doc.filename}"):
+                if edited_text.strip() != doc.markdown_content.strip():
+                    with st.expander("Diferencias vs original generado"):
+                        st.code(
+                            unified_md_diff(doc.markdown_content, edited_text, doc.filename),
+                            language="diff",
+                        )
+                if st.button("Guardar edición y aprobar", key=f"save_{doc.filename}"):
                     state = val_store.mark_approved(state, doc.filename, edited_content=edited_text)
                     val_store.save_state(meeting_dir, state)
                     st.session_state[state_key] = state
@@ -323,7 +345,17 @@ def _render_validacion(
             btn_col, reason_col, reset_col = st.columns([1, 2, 1])
             with btn_col:
                 if st.button("Aprobar", key=f"approve_{doc.filename}", type="primary"):
-                    state = val_store.mark_approved(state, doc.filename)
+                    # F11: si el usuario tiene una edición en curso, se aprueba CON ella (antes se
+                    # perdía silenciosamente al pulsar Aprobar en vez de "Guardar edición").
+                    current_edit = st.session_state.get(
+                        f"edit_{doc.filename}", doc.markdown_content
+                    )
+                    if current_edit.strip() != doc.markdown_content.strip():
+                        state = val_store.mark_approved(
+                            state, doc.filename, edited_content=current_edit
+                        )
+                    else:
+                        state = val_store.mark_approved(state, doc.filename)
                     val_store.save_state(meeting_dir, state)
                     st.session_state[state_key] = state
                     st.rerun()
@@ -346,6 +378,8 @@ def _render_validacion(
                     st.session_state[state_key] = state
                     st.rerun()
 
+            if record.auto_approved:
+                st.caption("🤖 Auto-aprobado (modo automático)")
             if record.validated_at:
                 st.caption(f"Validado: {record.validated_at.strftime('%Y-%m-%d %H:%M UTC')}")
             if record.rejection_reason:
@@ -353,7 +387,9 @@ def _render_validacion(
 
     st.divider()
 
-    gh_ok = pr_module.is_gh_available(settings.gh_executable)
+    gh_available = pr_module.is_gh_available(settings.gh_executable)
+    gh_auth = gh_available and pr_module.is_gh_authenticated(settings.gh_executable)
+    gh_ok = gh_available and gh_auth
     git_enabled = settings.git_integration_enabled
     n_approved = state.approved_count()
 
@@ -362,22 +398,30 @@ def _render_validacion(
             "La integración Git está desactivada. "
             "Actívala con `GIT_INTEGRATION_ENABLED=true` en `.env`."
         )
-    elif not gh_ok:
+    elif not gh_available:
         st.warning(
-            "El CLI `gh` no está disponible o no está autenticado. "
-            "Instálalo y ejecuta `gh auth login`."
+            "El CLI `gh` no está instalado o no se encuentra en el PATH. "
+            "Instálalo para crear Pull Requests automáticamente."
         )
+    elif not gh_auth:
+        st.warning("El CLI `gh` no está autenticado. Ejecuta `gh auth login`.")
 
     publish_disabled = not git_enabled or not gh_ok or n_approved == 0
     btn_label = f"Publicar a Git ({n_approved} doc{'s' if n_approved != 1 else ''})"
 
     if st.button(btn_label, disabled=publish_disabled, type="primary"):
-        metadata = MeetingMetadata(
-            meeting_id=data.meeting_id,
-            title=data.meeting_id,
-            date=None,
-            source_audio=None,
-        )
+        # F3: usa la metadata persistida (fecha/título/audio) si está disponible, en vez de
+        # reconstruirla con date=None (que perdía la fecha en la rama y el PR).
+        meeting_meta_raw = data.result.get("meeting_metadata")
+        if isinstance(meeting_meta_raw, dict):
+            metadata = MeetingMetadata.model_validate(meeting_meta_raw)
+        else:
+            metadata = MeetingMetadata(
+                meeting_id=data.meeting_id,
+                title=data.meeting_id,
+                date=None,
+                source_audio=None,
+            )
         with st.spinner("Publicando en Git..."):
             try:
                 result = pub_module.publish_meeting(
@@ -388,6 +432,11 @@ def _render_validacion(
                 )
                 if result.pr_url:
                     st.success(f"Publicado — [Abrir PR]({result.pr_url})")
+                elif result.compare_url:
+                    st.success(
+                        f"Publicado — Rama: `{result.branch}` · "
+                        f"[Abrir PR (compare)]({result.compare_url})"
+                    )
                 else:
                     st.success(
                         f"Publicado — Rama: `{result.branch}` · Commit: `{result.commit_sha}`"
@@ -398,22 +447,82 @@ def _render_validacion(
 
 
 # ---------------------------------------------------------------------------
+# Procesar nueva reunión (F4)
+# ---------------------------------------------------------------------------
+
+
+def _process_uploaded(uploaded: Any, use_rag: bool, use_gen: bool, title: str) -> None:
+    """Guarda el audio subido y ejecuta el pipeline con progreso por fase."""
+    from meeting_forge.pipeline import run_pipeline  # import perezoso (dependencias pesadas)
+
+    raw_dir = settings.data_dir / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    audio_path = raw_dir / uploaded.name
+    audio_path.write_bytes(uploaded.getbuffer())
+
+    with st.status("Procesando reunión…", expanded=True) as status:
+
+        def _progress(message: str) -> None:
+            status.write(message)
+
+        try:
+            result = run_pipeline(
+                audio_path,
+                use_rag=use_rag,
+                use_generation=use_gen,
+                meeting_title=title.strip(),
+                progress=_progress,
+            )
+        except Exception as exc:
+            status.update(label="Error al procesar", state="error")
+            st.error(f"Error al procesar la reunión: {exc}")
+            return
+        status.update(
+            label=(
+                f"Listo: {result.n_decisions} decisiones · "
+                f"{result.n_actions} tareas · {result.n_documents} documentos"
+            ),
+            state="complete",
+        )
+
+    st.cache_data.clear()
+    st.session_state["selected_meeting_id"] = result.meeting_id
+    st.rerun()
+
+
+def _render_run_panel() -> None:
+    """Panel en el sidebar para subir un audio y ejecutar el pipeline desde la UI."""
+    with st.sidebar.expander("➕ Procesar nueva reunión"):
+        uploaded = st.file_uploader(
+            "Audio de la reunión",
+            type=["wav", "mp3", "m4a", "flac", "ogg"],
+        )
+        use_rag = st.checkbox("Usar RAG", value=settings.rag_enabled)
+        use_gen = st.checkbox("Generar documentos", value=settings.generation_enabled)
+        title = st.text_input("Título (opcional)")
+        if st.button("Procesar", type="primary", disabled=uploaded is None):
+            _process_uploaded(uploaded, use_rag, use_gen, title)
+
+
+# ---------------------------------------------------------------------------
 # Punto de entrada
 # ---------------------------------------------------------------------------
 
 
 def main() -> None:
-    st.set_page_config(page_title="MeetingForge — Visor", layout="wide")
+    st.set_page_config(page_title="MeetingForge", layout="wide")
+
+    st.sidebar.title("MeetingForge")
+    st.sidebar.caption("Procesa y revisa reuniones")
+    _render_run_panel()
 
     meetings = list_meetings(_OUTPUTS_DIR)
 
     if not meetings:
-        st.warning(
-            "No hay reuniones procesadas en `data/outputs/`. "
-            "Ejecuta primero el pipeline con:\n\n"
-            "```bash\n"
-            "uv run python scripts/run_e2e.py data/raw/<audio.wav>\n"
-            "```"
+        st.info(
+            "No hay reuniones procesadas todavía. "
+            "Sube un audio en la barra lateral (**➕ Procesar nueva reunión**) para empezar, "
+            "o usa el CLI: `uv run python scripts/run_e2e.py data/raw/<audio.wav>`."
         )
         return
 

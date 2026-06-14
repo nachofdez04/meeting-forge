@@ -23,6 +23,10 @@ class VectorStore(Protocol):
 
     def clear(self) -> None: ...
 
+    def delete_by_source(self, source_path: str) -> int: ...
+
+    def list_sources(self) -> set[str]: ...
+
 
 def _chunk_to_metadata(chunk: DocumentChunk) -> dict[str, Any]:
     """Convierte un DocumentChunk a metadata serializable de Chroma."""
@@ -92,8 +96,9 @@ class ChromaVectorStore:
         dists = (res.get("distances") or [[]])[0]
         for chunk_id, text, meta, dist in zip(ids, docs, metas, dists, strict=False):
             chunk = _metadata_to_chunk(chunk_id, text or "", dict(meta or {}))
-            # Chroma usa distancia coseno (0=idéntico). Convertimos a score [0..1] aprox.
-            score = 1.0 - float(dist) if dist is not None else 0.0
+            # Chroma usa distancia coseno (0=idéntico). Convertimos a score [0..1], con clamp (B8):
+            # la distancia coseno cae en [0, 2], por lo que 1 - dist podría ser negativo.
+            score = max(0.0, min(1.0, 1.0 - float(dist))) if dist is not None else 0.0
             results.append(RetrievalResult(chunk=chunk, score=score))
         return results
 
@@ -107,3 +112,20 @@ class ChromaVectorStore:
         if ids:
             self._collection.delete(ids=ids)
             logger.info("Vector store limpiado ({n} chunks eliminados)", n=len(ids))
+
+    def delete_by_source(self, source_path: str) -> int:
+        """Elimina todos los chunks asociados a un `source_path`. Devuelve cuántos borró.
+
+        Evita chunks huérfanos al reindexar un documento editado, vaciado o renombrado.
+        """
+        existing = self._collection.get(where={"source_path": source_path})
+        ids = existing.get("ids") or []
+        if ids:
+            self._collection.delete(ids=ids)
+        return len(ids)
+
+    def list_sources(self) -> set[str]:
+        """Devuelve el conjunto de `source_path` distintos presentes en la colección."""
+        existing = self._collection.get(include=["metadatas"])
+        metas = existing.get("metadatas") or []
+        return {str(m.get("source_path", "")) for m in metas if m}

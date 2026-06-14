@@ -1,5 +1,12 @@
 # Mejoras del Proyecto MeetingForge
 
+> **⚠️ Documento superado — sustituido por [`planes/`](planes/).** Este análisis es **anterior a la
+> "Fase 5: Mejoras"**. Sus prioridades P0 (corregir `ruff`, `mypy`, el test flaky, añadir CI/pre-commit y
+> alinear README↔estado) **ya están resueltas y verificadas** (`ruff` y `mypy --strict` limpios, 189 tests en
+> verde). La **fuente de verdad actual** son los planes en [`planes/`](planes/):
+> [`00-orquestador.md`](planes/00-orquestador.md), [`01-bugs-y-deuda-tecnica.md`](planes/01-bugs-y-deuda-tecnica.md)
+> y [`02-features.md`](planes/02-features.md). Este fichero se conserva por contexto histórico.
+
 ## Resumen del análisis
 
 Este documento resume el análisis de `propuesta_tfm.pdf` y del estado actual del repositorio. La propuesta del TFM plantea una aplicación de IA generativa capaz de transformar reuniones técnicas en conocimiento estructurado y documentación versionada. El sistema esperado incluye transcripción automática, análisis semántico con LLMs, RAG sobre documentación Markdown en Git, generación de actas, documentación técnica, roadmap y ADRs, validación humana y evaluación mediante métricas.

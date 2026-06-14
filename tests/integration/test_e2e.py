@@ -6,6 +6,7 @@ ffmpeg instalado, API keys reales y un audio de prueba en
 estén presentes.
 """
 
+import os
 from pathlib import Path
 
 import pytest
@@ -14,7 +15,10 @@ FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "sample.wav"
 
 
 @pytest.mark.integration
-@pytest.mark.skip(reason="Requires audio fixture, ffmpeg, API keys and Whisper model")
+@pytest.mark.skipif(
+    not os.environ.get("RUN_INTEGRATION"),
+    reason="Requires audio fixture, ffmpeg, API keys and Whisper model (set RUN_INTEGRATION=1)",
+)
 def test_e2e_pipeline() -> None:
     """Pipeline completo: audio → transcript → insights."""
     from meeting_forge.analysis.extractor import InsightsExtractor

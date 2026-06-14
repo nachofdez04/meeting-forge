@@ -75,8 +75,6 @@ class MarkdownChunker:
 
         sections: list[_Section] = []
         header_stack: list[str] = []
-        current_lines: list[str] = []
-        current_start = 1
 
         # Mapeo de tokens heading a (nivel, texto, line_start)
         heading_breaks: list[tuple[int, int, str]] = []
@@ -136,8 +134,6 @@ class MarkdownChunker:
                 )
             )
 
-        # current_lines/current_start no se usan aquí; sólo para satisfacer linter si quisiera ampliarse
-        _ = (current_lines, current_start)
         return sections
 
     def _maybe_split_by_size(
@@ -145,8 +141,9 @@ class MarkdownChunker:
     ) -> list[tuple[str, int, int]]:
         """Si el texto excede max_chars, lo divide con overlap.
 
-        Para chunks divididos no podemos saber con precisión el rango de líneas
-        de cada sub-chunk, así que mantenemos el rango completo de la sección.
+        Cada sub-chunk recibe un rango de líneas aproximado (B7) contando los saltos de línea
+        consumidos hasta su offset, de modo que las citas apunten a líneas distintas y la clave de
+        deduplicación `path:line_start-line_end` no colapse sub-chunks diferentes en una sola cita.
         """
         if len(text) <= self.max_chars:
             return [(text, line_start, line_end)]
@@ -156,7 +153,9 @@ class MarkdownChunker:
         start = 0
         while start < len(text):
             end = min(start + self.max_chars, len(text))
-            parts.append((text[start:end], line_start, line_end))
+            sub_start = line_start + text.count("\n", 0, start)
+            sub_end = min(line_end, line_start + text.count("\n", 0, end))
+            parts.append((text[start:end], sub_start, max(sub_start, sub_end)))
             if end == len(text):
                 break
             start += step

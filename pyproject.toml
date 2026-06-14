@@ -22,6 +22,9 @@ dependencies = [
     "markdown-it-py>=3.0.0",
 ]
 
+[project.scripts]
+meeting-forge = "meeting_forge.cli:app"
+
 [dependency-groups]
 dev = [
     "ruff>=0.6.0",
@@ -59,6 +62,7 @@ ignore = ["E501"]  # line-length handled by formatter
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/*.py" = ["B008"]  # Typer uses function calls in argument defaults by design
+"src/meeting_forge/cli.py" = ["B008"]  # idem: comandos Typer
 
 [tool.mypy]
 strict = true

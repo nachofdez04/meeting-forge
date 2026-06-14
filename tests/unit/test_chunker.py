@@ -40,6 +40,21 @@ def test_long_section_is_split_with_overlap() -> None:
     assert "palabra" in joined
 
 
+def test_split_chunks_have_distinct_line_ranges() -> None:
+    # B7: al dividir una sección grande, cada sub-chunk debe llevar un rango de líneas propio.
+    chunker = MarkdownChunker(max_chars=120, overlap_chars=20)
+    body = "\n".join(f"linea numero {i} con texto de relleno suficiente" for i in range(40))
+    content = f"# Titulo\n\n## Seccion larga\n\n{body}\n"
+    chunks = chunker.chunk_file("doc.md", content)
+
+    long_chunks = [c for c in chunks if c.section_path == ["Titulo", "Seccion larga"]]
+    assert len(long_chunks) > 1
+    ranges = {(c.line_start, c.line_end) for c in long_chunks}
+    assert len(ranges) > 1, "los sub-chunks no deben compartir todos el mismo rango de líneas"
+    starts = [c.line_start for c in long_chunks]
+    assert starts == sorted(starts), "line_start debe ser no decreciente"
+
+
 def test_file_without_headers_produces_one_chunk() -> None:
     chunker = MarkdownChunker()
     content = "Solo texto plano, sin headers.\nOtra línea."

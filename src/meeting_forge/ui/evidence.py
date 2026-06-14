@@ -39,8 +39,18 @@ def read_source_slice(
     context_lines añade líneas extra antes y después, recortadas a los límites del archivo.
     Retorna SliceResult con found=False si el archivo no existe o el rango es inválido.
     """
-    resolved = base_dir / source_path
+    resolved = (base_dir / source_path).resolve()
     resolved_str = str(resolved)
+
+    # TD9: no leer fuera del directorio base (bloquea `..` y rutas absolutas).
+    if not resolved.is_relative_to(base_dir.resolve()):
+        return SliceResult(
+            text="",
+            found=False,
+            resolved_path=resolved_str,
+            warning=f"Ruta fuera del directorio base (bloqueada): {source_path}",
+        )
+
     lines = _read_file_lines(resolved_str)
 
     if lines is None:

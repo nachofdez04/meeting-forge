@@ -13,8 +13,7 @@ dist/
 *.egg-info/
 .eggs/
 
-# uv
-uv.lock
+# uv.lock SÍ se versiona (reproducibilidad del TFM) — no se ignora a propósito.
 
 # IDEs
 .vscode/
@@ -28,6 +27,12 @@ data/raw/*
 data/transcripts/*
 data/outputs/*
 !data/**/.gitkeep
+
+# Estado de validación stray en la raíz (el real vive en data/outputs/<meeting>/validation.json)
+/validation.json
+
+# Reportes de evaluación generados (los datasets sí se versionan)
+evaluation/results/
 
 # Modelos descargados
 models/

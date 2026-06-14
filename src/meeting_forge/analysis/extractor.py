@@ -70,6 +70,8 @@ class InsightsExtractor:
         self.provider: LLMProvider = provider or get_provider()
         self.retriever = retriever
         self.prompt_template = self._load_prompt(use_v2=retriever is not None)
+        # Chunks recuperados en la última extracción (para persistir evidencia · F3).
+        self.last_context: list[RetrievalResult] = []
 
     def _load_prompt(self, use_v2: bool) -> str:
         """Carga v2 si hay retriever, v1 si no."""
@@ -85,6 +87,7 @@ class InsightsExtractor:
         logger.info("Extrayendo insights con LLM (rag={r})", r=self.retriever is not None)
 
         context_block, ordered_chunks = self._build_context(transcript)
+        self.last_context = ordered_chunks
         if self.retriever is not None and "{context}" in self.prompt_template:
             prompt = self.prompt_template.format(
                 context=context_block,

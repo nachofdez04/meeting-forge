@@ -8,7 +8,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from meeting_forge.git_integration.pr import PrCreationError, create_pr, is_gh_available
+from meeting_forge.git_integration.pr import (
+    PrCreationError,
+    build_compare_url,
+    create_pr,
+    is_gh_available,
+)
 
 
 class TestIsGhAvailable:
@@ -62,13 +67,42 @@ class TestCreatePr:
 
     def test_passes_correct_args(self, tmp_path: Path) -> None:
         url = "https://github.com/owner/repo/pull/1"
-        with patch(
-            "subprocess.run", return_value=self._mock_run(stdout=url)
-        ) as mock_run:
-            create_pr(tmp_path, "my-branch", "My Title", "My Body", base="develop", gh_executable="gh")
+        with patch("subprocess.run", return_value=self._mock_run(stdout=url)) as mock_run:
+            create_pr(
+                tmp_path, "my-branch", "My Title", "My Body", base="develop", gh_executable="gh"
+            )
         call_args = mock_run.call_args[0][0]
         assert "gh" in call_args
         assert "pr" in call_args
         assert "create" in call_args
         assert "my-branch" in call_args
         assert "develop" in call_args
+
+    def test_draft_flag_added(self, tmp_path: Path) -> None:
+        url = "https://github.com/owner/repo/pull/1"
+        with patch("subprocess.run", return_value=self._mock_run(stdout=url)) as mock_run:
+            create_pr(tmp_path, "b", "t", "body", draft=True)
+        assert "--draft" in mock_run.call_args[0][0]
+
+    def test_no_draft_by_default(self, tmp_path: Path) -> None:
+        url = "https://github.com/owner/repo/pull/1"
+        with patch("subprocess.run", return_value=self._mock_run(stdout=url)) as mock_run:
+            create_pr(tmp_path, "b", "t", "body")
+        assert "--draft" not in mock_run.call_args[0][0]
+
+
+class TestBuildCompareUrl:
+    def test_https_remote(self) -> None:
+        url = build_compare_url("https://github.com/nacho/docs.git", "main", "meeting-forge/x")
+        assert url == "https://github.com/nacho/docs/compare/main...meeting-forge/x?expand=1"
+
+    def test_ssh_remote(self) -> None:
+        url = build_compare_url("git@github.com:nacho/docs.git", "main", "feat")
+        assert url == "https://github.com/nacho/docs/compare/main...feat?expand=1"
+
+    def test_https_without_git_suffix(self) -> None:
+        url = build_compare_url("https://github.com/nacho/docs", "main", "feat")
+        assert url == "https://github.com/nacho/docs/compare/main...feat?expand=1"
+
+    def test_non_github_returns_none(self) -> None:
+        assert build_compare_url("https://gitlab.com/nacho/docs.git", "main", "feat") is None

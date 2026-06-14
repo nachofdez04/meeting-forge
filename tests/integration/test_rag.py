@@ -4,6 +4,7 @@ Skipped por defecto: requiere descargar el modelo de embeddings y escribir
 ChromaDB en disco. Habilítalo manualmente cuando esas piezas estén presentes.
 """
 
+import os
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,10 @@ FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "sample_docs"
 
 
 @pytest.mark.integration
-@pytest.mark.skip(reason="Requires sentence-transformers model download and ChromaDB")
+@pytest.mark.skipif(
+    not os.environ.get("RUN_INTEGRATION"),
+    reason="Requires sentence-transformers model download and ChromaDB (set RUN_INTEGRATION=1)",
+)
 def test_index_and_retrieve_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Indexar fixtures → retrieve produce los chunks esperados."""
     # Redirigir ChromaDB a tmp_path

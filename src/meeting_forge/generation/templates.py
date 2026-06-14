@@ -43,22 +43,6 @@ _ADR_SKELETON_WITH_REFS = _ADR_SKELETON + """
 {footnote_block}
 """
 
-_ADR_CONSOLIDATED_HEADER = """\
-# ADR Consolidado: {title}
-
-> Reunión: {meeting_title}
-> Fecha: {date}
-> Decisiones: {n_decisions}
-
-"""
-
-_ADR_CONSOLIDATED_SECTION = """\
----
-
-## Decisión {counter}: {title}
-
-"""
-
 
 def render_adr_skeleton(
     *,

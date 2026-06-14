@@ -6,7 +6,9 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ..ui.loader import GeneratedDocView
+from loguru import logger
+
+from ..generation.schemas import GeneratedDocView
 from .schemas import MeetingValidationState, ValidationRecord, ValidationStatus
 
 _FILENAME = "validation.json"
@@ -19,7 +21,8 @@ def load_state(meeting_dir: Path) -> MeetingValidationState:
         return MeetingValidationState()
     try:
         return MeetingValidationState.model_validate_json(path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, ValueError) as exc:
+        logger.warning("validation.json ilegible en {p}: {e}; se reinicia el estado", p=path, e=exc)
         return MeetingValidationState()
 
 
@@ -36,9 +39,7 @@ def save_state(meeting_dir: Path, state: MeetingValidationState) -> None:
         raise
 
 
-def initialize_pending(
-    meeting_dir: Path, docs: list[GeneratedDocView]
-) -> MeetingValidationState:
+def initialize_pending(meeting_dir: Path, docs: list[GeneratedDocView]) -> MeetingValidationState:
     """Crea registros PENDING para docs aún no validados. Idempotente: no sobreescribe."""
     state = load_state(meeting_dir)
     changed = False
@@ -109,3 +110,27 @@ def get_effective_content(
     if record and record.edited_content is not None:
         return record.edited_content
     return original_content
+
+
+def auto_approve(
+    state: MeetingValidationState,
+    docs: list[GeneratedDocView],
+    allowed_kinds: list[str],
+) -> list[str]:
+    """Auto-aprueba (F8) los documentos cuyo `kind` esté en `allowed_kinds`. Devuelve los filenames.
+
+    Marca `auto_approved=True` para que la UI y la auditoría distingan estas aprobaciones de las humanas.
+    """
+    approved: list[str] = []
+    for doc in docs:
+        if doc.kind not in allowed_kinds:
+            continue
+        record = state.records.get(doc.filename, ValidationRecord(filename=doc.filename))
+        record.status = ValidationStatus.APPROVED
+        record.auto_approved = True
+        record.edited_content = None
+        record.rejection_reason = None
+        record.validated_at = datetime.now(tz=UTC)
+        state.records[doc.filename] = record
+        approved.append(doc.filename)
+    return approved

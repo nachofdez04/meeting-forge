@@ -25,6 +25,7 @@ class ValidationRecord(BaseModel):
     edited_content: str | None = None
     rejection_reason: str | None = None
     validated_at: datetime | None = None
+    auto_approved: bool = False  # aprobado por el modo automático (F8), no por un humano
 
 
 class MeetingValidationState(BaseModel):

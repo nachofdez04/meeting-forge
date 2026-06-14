@@ -13,7 +13,7 @@ _SRC = Path(__file__).resolve().parent.parent / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from meeting_forge.config import settings  # noqa: E402
+from meeting_forge.config import ensure_data_dirs, settings  # noqa: E402
 from meeting_forge.rag.embeddings import SentenceTransformerEmbeddings  # noqa: E402
 from meeting_forge.rag.indexer import DocumentIndexer  # noqa: E402
 from meeting_forge.rag.vector_store import ChromaVectorStore  # noqa: E402
@@ -34,6 +34,11 @@ def main(
         "--clear",
         help="Limpia la colección antes de indexar",
     ),
+    sync: bool = typer.Option(
+        False,
+        "--sync",
+        help="Tras indexar, poda los chunks de documentos que ya no existen (borrados/renombrados)",
+    ),
 ) -> None:
     """Indexa documentación Markdown.
 
@@ -44,6 +49,8 @@ def main(
     logger.info("=" * 80)
     logger.info("MeetingForge - Indexación de documentación")
     logger.info("=" * 80)
+
+    ensure_data_dirs()
 
     paths: list[Path] = []
     paths.append(settings.project_root)
@@ -64,7 +71,10 @@ def main(
     embeddings = SentenceTransformerEmbeddings()
     indexer = DocumentIndexer(store=store, embeddings=embeddings)
 
-    total = indexer.index_paths(paths, root=settings.project_root)
+    if sync:
+        total = indexer.sync_paths(paths, root=settings.project_root)
+    else:
+        total = indexer.index_paths(paths, root=settings.project_root)
     logger.info("Indexación completada: {n} chunks añadidos", n=total)
     logger.info("Total en store: {n}", n=store.count())
 

@@ -52,6 +52,20 @@ cp .env.example .env
 
 ## Uso
 
+> **Entrypoints CLI** (tras `uv sync`): `meeting-forge run|index|eval|demo|check`. Son la forma
+> recomendada de invocar el sistema instalado; equivalen a los scripts de `scripts/`.
+
+### 0. Demo rápida y verificación (sin API keys)
+
+```bash
+# Verifica prerequisitos (Python, ffmpeg, gh, API keys)
+uv run meeting-forge check
+
+# Crea una reunión de demostración (sin LLM ni audio) y explórala en la UI
+uv run meeting-forge demo
+uv run --group ui streamlit run src/meeting_forge/ui/app.py
+```
+
 ### 1. Indexar documentación (RAG)
 
 Antes del E2E con RAG activado, indexa los Markdown del repo (+ `DOCS_PATH` si está configurado):
@@ -91,7 +105,7 @@ uv sync --group ui
 uv run --group ui streamlit run src/meeting_forge/ui/app.py
 ```
 
-El visor navega los outputs ya procesados en `data/outputs/` y muestra: resumen ejecutivo, transcript con timestamps, decisiones y tareas con sus fuentes, panel de evidencia (texto real de los chunks citados) y los ADRs/Actas generados.
+Desde el panel **➕ Procesar nueva reunión** (barra lateral) puedes **subir un audio y ejecutar el pipeline** (transcripción → RAG → extracción → generación) con progreso por fase, sin usar la terminal. Además, la UI navega los outputs ya procesados en `data/outputs/` y muestra: resumen ejecutivo, transcript con timestamps, decisiones y tareas con sus fuentes, panel de evidencia (texto real de los chunks citados) y los documentos generados (ADRs, actas, roadmap, doc técnica) con sus diffs.
 
 ### 4. Validación y publicación a Git
 
@@ -116,6 +130,23 @@ GIT_BRANCH_PREFIX=meeting-forge/
 3. Con al menos un documento aprobado, pulsa "Publicar a Git".
 4. La UI crea una rama, hace commit, push y abre un PR en el repositorio destino.
 
+### 5. Evaluación (métricas)
+
+Calcula métricas de calidad reproducibles a partir de un dataset anotado: WER (transcripción),
+precision/recall/F1 (extracción) y precision@k/recall@k (retrieval).
+
+```bash
+uv run python scripts/evaluate.py evaluation/datasets/example.json --k 3
+```
+
+Escribe `evaluation/results/report.json` y `report.md` (tabla lista para anexos de la memoria).
+
+Además, cada ejecución de `run_e2e.py` registra telemetría por run en `data/outputs/<id>/<id>_result.json`:
+
+- `run_meta`: `run_id`, tiempos por fase, tokens de entrada/salida, latencia y coste estimado por proveedor.
+- `meeting_metadata`: fecha/título/audio de la reunión (usados por la UI al publicar).
+- `retrieved_evidence`: texto + score de los chunks recuperados (evidencia reproducible).
+
 ## Tests
 
 ```bash
@@ -125,8 +156,9 @@ uv run pytest
 # Con coverage
 uv run pytest --cov=meeting_forge --cov-report=html
 
-# Tests de integración (requieren fixture y API keys, skipped por defecto)
-uv run pytest -m integration --no-skip
+# Tests de integración (skipped por defecto; requieren fixtures, modelos y API keys).
+# Habilítalos definiendo RUN_INTEGRATION:
+RUN_INTEGRATION=1 uv run pytest -m integration
 ```
 
 ## Comandos útiles

@@ -217,3 +217,19 @@ class TestLoadGeneratedDocs:
         (tmp_path / "adr" / "x.md").write_text("content", encoding="utf-8")
         docs = load_generated_docs(tmp_path)
         assert isinstance(docs[0], GeneratedDocView)
+
+    def test_loads_diff_sibling(self, tmp_path: Path) -> None:
+        # F5: el .diff adjunto a un doc de actualización se carga en GeneratedDocView.diff.
+        (tmp_path / "roadmap").mkdir()
+        (tmp_path / "roadmap" / "roadmap.md").write_text("# Roadmap", encoding="utf-8")
+        (tmp_path / "roadmap" / "roadmap.md.diff").write_text("+nuevo", encoding="utf-8")
+        docs = load_generated_docs(tmp_path)
+        assert len(docs) == 1
+        assert docs[0].kind == "roadmap"
+        assert docs[0].diff == "+nuevo"
+
+    def test_diff_none_when_absent(self, tmp_path: Path) -> None:
+        (tmp_path / "adr").mkdir()
+        (tmp_path / "adr" / "x.md").write_text("adr", encoding="utf-8")
+        docs = load_generated_docs(tmp_path)
+        assert docs[0].diff is None
