@@ -16,13 +16,23 @@ from datetime import UTC, datetime
 from pydantic import BaseModel, Field
 
 # Precios aproximados en USD por 1M de tokens (entrada, salida). Ajusta a las tarifas vigentes.
-# Modelos no listados → coste 0.0 (se marca is_estimated=False a nivel de run si hubo desconocidos).
+# Modelos no listados → coste 0.0 (se marca cost_complete=False a nivel de run si hubo desconocidos).
+# Mantén el modelo por defecto de `config.py` (claude-sonnet-4-6) en esta tabla para que el coste
+# se estime. Se conservan algunos IDs antiguos para recalcular `result.json` de runs previos.
 _PRICES_USD_PER_1M: dict[str, tuple[float, float]] = {
+    # Modelos vigentes
+    "claude-fable-5": (10.0, 50.0),
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-opus-4-7": (5.0, 25.0),
+    "claude-opus-4-6": (5.0, 25.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-haiku-4-5": (1.0, 5.0),
+    "gpt-4o-2024-08-06": (2.5, 10.0),
+    "gpt-4o-mini": (0.15, 0.6),
+    # Legacy (retirados / deprecados) — para recomputar runs históricos
     "claude-sonnet-4-20250514": (3.0, 15.0),
     "claude-opus-4-20250514": (15.0, 75.0),
     "claude-3-5-haiku-20241022": (0.8, 4.0),
-    "gpt-4o-2024-08-06": (2.5, 10.0),
-    "gpt-4o-mini": (0.15, 0.6),
 }
 
 

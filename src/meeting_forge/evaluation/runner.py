@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 from .metrics import (
     match_items,
     mean_wer,
@@ -12,8 +14,38 @@ from .metrics import (
 from .schemas import EvalDataset, EvalReport
 
 
-def evaluate(dataset: EvalDataset, k: int = 5) -> EvalReport:
-    """Calcula todas las métricas disponibles según las secciones presentes en el dataset."""
+def _add_performance(report: EvalReport, run_metas: Sequence[Mapping[str, object]]) -> None:
+    """Agrega métricas de coste/latencia/tokens a partir de la telemetría (`run_meta`) de runs."""
+    n = len(run_metas)
+    if n == 0:
+        return
+
+    def _nums(key: str) -> list[float]:
+        out: list[float] = []
+        for rm in run_metas:
+            val = rm.get(key, 0)
+            out.append(float(val) if isinstance(val, (int, float)) else 0.0)
+        return out
+
+    costs = _nums("total_cost_usd")
+    report.add("performance.runs", float(n))
+    report.add("performance.total_cost_usd", sum(costs))
+    report.add("performance.mean_cost_usd", sum(costs) / n)
+    report.add("performance.mean_llm_latency_s", sum(_nums("total_llm_latency_s")) / n)
+    report.add("performance.mean_input_tokens", sum(_nums("total_input_tokens")) / n)
+    report.add("performance.mean_output_tokens", sum(_nums("total_output_tokens")) / n)
+
+
+def evaluate(
+    dataset: EvalDataset,
+    k: int = 5,
+    run_metas: Sequence[Mapping[str, object]] | None = None,
+) -> EvalReport:
+    """Calcula todas las métricas disponibles según las secciones presentes en el dataset.
+
+    Si se pasan `run_metas` (lista de objetos `run_meta` de `result.json`), añade también métricas
+    de rendimiento agregadas: coste total/medio, latencia media de LLM y tokens medios por run.
+    """
     report = EvalReport()
 
     # --- Transcripción (WER) ---
@@ -52,6 +84,10 @@ def evaluate(dataset: EvalDataset, k: int = 5) -> EvalReport:
         recalls = [recall_at_k(e.retrieved, e.relevant, k) for e in dataset.retrieval]
         report.add(f"retrieval.precision_at_{k}", sum(precisions) / len(precisions))
         report.add(f"retrieval.recall_at_{k}", sum(recalls) / len(recalls))
+
+    # --- Rendimiento (coste / latencia / tokens, desde la telemetría de runs reales) ---
+    if run_metas:
+        _add_performance(report, run_metas)
 
     return report
 

@@ -83,3 +83,36 @@ class TestRunner:
 
         table = render_markdown(report)
         assert table.startswith("| Métrica | Valor |")
+
+    def test_evaluate_with_run_metas_adds_performance(self) -> None:
+        dataset = EvalDataset.model_validate(
+            {"transcription": [{"reference": "a b", "hypothesis": "a b"}]}
+        )
+        run_metas = [
+            {
+                "total_cost_usd": 0.01,
+                "total_llm_latency_s": 2.0,
+                "total_input_tokens": 1000,
+                "total_output_tokens": 500,
+            },
+            {
+                "total_cost_usd": 0.03,
+                "total_llm_latency_s": 4.0,
+                "total_input_tokens": 3000,
+                "total_output_tokens": 1500,
+            },
+        ]
+        report = evaluate(dataset, k=2, run_metas=run_metas)
+        values = {m.name: m.value for m in report.metrics}
+        assert values["performance.runs"] == 2.0
+        assert values["performance.total_cost_usd"] == 0.04
+        assert values["performance.mean_cost_usd"] == 0.02
+        assert values["performance.mean_llm_latency_s"] == 3.0
+        assert values["performance.mean_input_tokens"] == 2000.0
+
+    def test_evaluate_without_run_metas_has_no_performance(self) -> None:
+        dataset = EvalDataset.model_validate(
+            {"transcription": [{"reference": "a b", "hypothesis": "a b"}]}
+        )
+        report = evaluate(dataset, k=2)
+        assert not any(m.name.startswith("performance.") for m in report.metrics)

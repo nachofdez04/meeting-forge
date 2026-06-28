@@ -17,7 +17,7 @@ from loguru import logger
 
 from .analysis.extractor import InsightsExtractor
 from .analysis.llm_client import get_provider
-from .config import ensure_data_dirs, settings
+from .config import configure_logging, ensure_data_dirs, settings
 from .generation import DocumentGenerator, DocumentKind, GenerationMode, MeetingMetadata
 from .ingestion.transcriber import WhisperTranscriber
 from .observability import TelemetryCollector
@@ -113,6 +113,7 @@ def run_pipeline(
 
     `modes=None` usa `settings.generation_modes`. `progress` recibe un mensaje por fase.
     """
+    configure_logging()
     ensure_data_dirs()
     if not audio_path.exists():
         raise FileNotFoundError(f"Archivo de audio no encontrado: {audio_path}")

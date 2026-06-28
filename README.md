@@ -141,6 +141,15 @@ uv run python scripts/evaluate.py evaluation/datasets/example.json --k 3
 
 Escribe `evaluation/results/report.json` y `report.md` (tabla lista para anexos de la memoria).
 
+Para añadir **coste y latencia reales** al reporte, pásale los `result.json` de ejecuciones del
+pipeline con `--from-run` (repetible); agrega coste total/medio, latencia media de LLM y tokens
+medios por run a partir de su telemetría (`run_meta`):
+
+```bash
+uv run meeting-forge eval evaluation/datasets/example.json --k 3 \
+  --from-run data/outputs/<id>/<id>_result.json
+```
+
 Además, cada ejecución de `run_e2e.py` registra telemetría por run en `data/outputs/<id>/<id>_result.json`:
 
 - `run_meta`: `run_id`, tiempos por fase, tokens de entrada/salida, latencia y coste estimado por proveedor.

@@ -89,8 +89,10 @@ def create_pr(
             stdout=result.stdout,
             stderr=result.stderr,
         )
-    # gh pr create devuelve la URL en la última línea del stdout
-    url = result.stdout.strip().splitlines()[-1].strip()
+    # gh pr create devuelve la URL en la última línea del stdout. Si stdout viene vacío (gh
+    # devolvió 0 pero no escribió nada), evitamos el IndexError y lanzamos un error claro.
+    lines = result.stdout.strip().splitlines()
+    url = lines[-1].strip() if lines else ""
     if not url.startswith("http"):
         raise PrCreationError(
             "gh pr create no devolvió una URL válida",

@@ -1,8 +1,10 @@
 """Configuración global de la aplicación usando Pydantic Settings."""
 
+import sys
 from pathlib import Path
 from typing import Literal
 
+from loguru import logger
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -41,7 +43,9 @@ class Settings(BaseSettings):
     llm_retry_base_delay: float = 1.0
 
     # --- Modelos ---
-    anthropic_model: str = "claude-sonnet-4-20250514"
+    # claude-sonnet-4-20250514 se retiró el 2026-06-15; el reemplazo drop-in es claude-sonnet-4-6
+    # (mismo nivel de coste). Mantén el ID sincronizado con la tabla de precios de observability.py.
+    anthropic_model: str = "claude-sonnet-4-6"
     openai_model: str = "gpt-4o-2024-08-06"
     ollama_model: str = "llama3.1:8b"
 
@@ -106,6 +110,23 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+_logging_configured = False
+
+
+def configure_logging() -> None:
+    """Aplica `settings.log_level` a loguru. Idempotente (no duplica handlers).
+
+    loguru no se configura solo: su handler por defecto emite todo a `stderr` ignorando
+    `LOG_LEVEL`. Los entrypoints (CLI, pipeline, UI) llaman a esta función para que la variable
+    de entorno tenga efecto real.
+    """
+    global _logging_configured
+    if _logging_configured:
+        return
+    logger.remove()
+    logger.add(sys.stderr, level=settings.log_level.upper())
+    _logging_configured = True
 
 
 def ensure_data_dirs() -> None:

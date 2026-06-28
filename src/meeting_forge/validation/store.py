@@ -39,6 +39,15 @@ def save_state(meeting_dir: Path, state: MeetingValidationState) -> None:
         raise
 
 
+def clear_state(meeting_dir: Path) -> None:
+    """Borra el `validation.json` de la reunión (no-op si no existe).
+
+    Se usa al reprocesar una reunión: los documentos se regeneran, así que las aprobaciones o
+    ediciones previas apuntaban a contenido superado y deben reiniciarse a PENDING (B-N2).
+    """
+    (meeting_dir / _FILENAME).unlink(missing_ok=True)
+
+
 def initialize_pending(meeting_dir: Path, docs: list[GeneratedDocView]) -> MeetingValidationState:
     """Crea registros PENDING para docs aún no validados. Idempotente: no sobreescribe."""
     state = load_state(meeting_dir)

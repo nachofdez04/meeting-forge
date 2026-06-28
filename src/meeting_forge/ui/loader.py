@@ -77,7 +77,9 @@ def list_meetings(base_dir: Path) -> list[MeetingSummary]:
         n_actions = (
             len(insights_raw.get("action_items", [])) if isinstance(insights_raw, dict) else 0
         )
-        has_docs = (subdir / "adr").is_dir() or (subdir / "acta").is_dir()
+        # Cubre todos los tipos generados (adr/acta/roadmap/technical-doc), no solo adr+acta,
+        # para que una reunión con únicamente roadmap/doc-técnica también cuente (B-N5).
+        has_docs = any((subdir / k.value).is_dir() for k in DocumentKind)
         summaries.append(
             MeetingSummary(
                 meeting_id=subdir.name,

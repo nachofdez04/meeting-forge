@@ -8,7 +8,7 @@ from typing import Any, ParamSpec, TypeVar, cast
 
 import streamlit as st
 
-from meeting_forge.config import settings
+from meeting_forge.config import configure_logging, settings
 from meeting_forge.generation.diffing import unified_md_diff
 from meeting_forge.generation.schemas import MeetingMetadata
 from meeting_forge.git_integration import pr as pr_module
@@ -485,6 +485,11 @@ def _process_uploaded(uploaded: Any, use_rag: bool, use_gen: bool, title: str) -
             state="complete",
         )
 
+    # B-N2: los documentos se han regenerado; invalida la validación previa (en memoria y en disco)
+    # para no arrastrar aprobaciones/ediciones que apuntaban al contenido anterior.
+    val_store.clear_state(result.out_dir)
+    st.session_state.pop(f"val_state_{result.out_dir}", None)
+
     st.cache_data.clear()
     st.session_state["selected_meeting_id"] = result.meeting_id
     st.rerun()
@@ -510,6 +515,7 @@ def _render_run_panel() -> None:
 
 
 def main() -> None:
+    configure_logging()
     st.set_page_config(page_title="MeetingForge", layout="wide")
 
     st.sidebar.title("MeetingForge")

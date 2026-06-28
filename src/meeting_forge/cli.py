@@ -6,6 +6,7 @@ Subcomandos: `run`, `index`, `eval`, `demo`, `check`. Reutiliza los servicios de
 
 from __future__ import annotations
 
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -13,7 +14,7 @@ from pathlib import Path
 import typer
 from loguru import logger
 
-from .config import ensure_data_dirs, settings
+from .config import configure_logging, ensure_data_dirs, settings
 from .demo import build_demo_meeting
 from .evaluation.runner import evaluate, render_markdown
 from .evaluation.schemas import EvalDataset
@@ -22,6 +23,12 @@ from .git_integration.pr import is_gh_authenticated, is_gh_available
 app = typer.Typer(
     add_completion=False, help="MeetingForge — pipeline, indexación, evaluación y demo"
 )
+
+
+@app.callback()
+def _main() -> None:
+    """Configura el logging (respetando LOG_LEVEL) antes de cualquier subcomando."""
+    configure_logging()
 
 
 @app.command()
@@ -92,13 +99,35 @@ def eval_cmd(
     dataset: Path = typer.Argument(..., help="Dataset JSON de evaluación"),
     k: int = typer.Option(5, "--k", help="k para precision@k / recall@k"),
     output_dir: Path = typer.Option(None, "--output-dir", "-o", help="Directorio del reporte"),
+    from_run: list[Path] = typer.Option(
+        None,
+        "--from-run",
+        help="result.json de runs para añadir coste/latencia al reporte (repetible)",
+    ),
 ) -> None:
-    """Calcula métricas (WER, P/R/F1, precision@k) y escribe el reporte."""
+    """Calcula métricas (WER, P/R/F1, precision@k) y escribe el reporte.
+
+    Con `--from-run <result.json>` (repetible) agrega las métricas de coste y latencia desde la
+    telemetría (`run_meta`) de ejecuciones reales del pipeline.
+    """
     if not dataset.exists():
         logger.error("Dataset no encontrado: {p}", p=dataset)
         raise typer.Exit(code=1)
     data = EvalDataset.model_validate_json(dataset.read_text(encoding="utf-8"))
-    report = evaluate(data, k=k)
+
+    run_metas: list[dict[str, object]] = []
+    for run_path in from_run or []:
+        if not run_path.exists():
+            logger.warning("Run ignorado (no existe): {p}", p=run_path)
+            continue
+        raw = json.loads(run_path.read_text(encoding="utf-8"))
+        meta = raw.get("run_meta") if isinstance(raw, dict) else None
+        if isinstance(meta, dict):
+            run_metas.append(meta)
+        else:
+            logger.warning("Run sin 'run_meta' utilizable: {p}", p=run_path)
+
+    report = evaluate(data, k=k, run_metas=run_metas or None)
     markdown = render_markdown(report)
     typer.echo(markdown)
     out_dir = output_dir or (settings.project_root / "evaluation" / "results")

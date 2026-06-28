@@ -65,6 +65,12 @@ class TestCreatePr:
             with pytest.raises(PrCreationError, match="URL válida"):
                 create_pr(tmp_path, "branch", "title", "body")
 
+    def test_raises_when_stdout_empty(self, tmp_path: Path) -> None:
+        # B-N3: returncode 0 con stdout vacío no debe reventar con IndexError, sino PrCreationError.
+        with patch("subprocess.run", return_value=self._mock_run(returncode=0, stdout="")):
+            with pytest.raises(PrCreationError, match="URL válida"):
+                create_pr(tmp_path, "branch", "title", "body")
+
     def test_passes_correct_args(self, tmp_path: Path) -> None:
         url = "https://github.com/owner/repo/pull/1"
         with patch("subprocess.run", return_value=self._mock_run(stdout=url)) as mock_run:
