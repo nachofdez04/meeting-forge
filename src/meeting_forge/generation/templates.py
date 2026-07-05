@@ -37,11 +37,14 @@ _ADR_SKELETON = """\
 {consequences_md}
 """
 
-_ADR_SKELETON_WITH_REFS = _ADR_SKELETON + """
+_ADR_SKELETON_WITH_REFS = (
+    _ADR_SKELETON
+    + """
 ## Referencias
 
 {footnote_block}
 """
+)
 
 
 def render_adr_skeleton(
@@ -58,17 +61,20 @@ def render_adr_skeleton(
 ) -> str:
     """Ensambla el Markdown final de un ADR a partir de sus partes."""
     template = _ADR_SKELETON_WITH_REFS if footnote_block else _ADR_SKELETON
-    return template.format(
-        title=title,
-        status=status,
-        date=date or "—",
-        owners=owners or "—",
-        tags=tags or "—",
-        context_md=context_md,
-        decision_md=decision_md,
-        consequences_md=consequences_md,
-        footnote_block=footnote_block,
-    ).rstrip() + "\n"
+    return (
+        template.format(
+            title=title,
+            status=status,
+            date=date or "—",
+            owners=owners or "—",
+            tags=tags or "—",
+            context_md=context_md,
+            decision_md=decision_md,
+            consequences_md=consequences_md,
+            footnote_block=footnote_block,
+        ).rstrip()
+        + "\n"
+    )
 
 
 # ---------------------------------------------------------------------------

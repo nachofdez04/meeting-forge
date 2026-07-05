@@ -1,0 +1,15 @@
+# Mantiene el contexto de build pequeño y reproducible.
+.venv/
+.git/
+data/
+notebooks/
+tests/
+evaluation/results/
+*.coverage
+.coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
+*.pyc
+propuesta_tfm.pdf

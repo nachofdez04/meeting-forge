@@ -16,6 +16,49 @@ def test_transcript_to_text_concatenates_segments() -> None:
     assert t.to_text() == "Hola\nmundo"
 
 
+def test_transcript_to_text_prefixes_speakers() -> None:
+    # UX-3: con diarización, cada línea va prefijada con su hablante (mejora owners/assignee).
+    t = Transcript(
+        segments=[
+            TranscriptSegment(start=0.0, end=1.0, text="Hola", speaker="Ana"),
+            TranscriptSegment(start=1.0, end=2.0, text="mundo", speaker=None),
+        ],
+        duration_seconds=2.0,
+        language="es",
+    )
+    assert t.to_text() == "Ana: Hola\nmundo"
+
+
+def test_transcript_to_indexed_text_adds_segment_markers() -> None:
+    # UX-6: cada línea lleva su índice [S<n>] para que el LLM cite momentos del audio.
+    t = Transcript(
+        segments=[
+            TranscriptSegment(start=0.0, end=1.0, text="Hola", speaker="Ana"),
+            TranscriptSegment(start=1.0, end=2.0, text="mundo", speaker=None),
+        ],
+        duration_seconds=2.0,
+        language="es",
+    )
+    assert t.to_indexed_text() == "[S0] Ana: Hola\n[S1] mundo"
+
+
+def test_rename_speakers_maps_labels_in_place() -> None:
+    t = Transcript(
+        segments=[
+            TranscriptSegment(start=0.0, end=1.0, text="a", speaker="SPEAKER_00"),
+            TranscriptSegment(start=1.0, end=2.0, text="b", speaker="SPEAKER_01"),
+            TranscriptSegment(start=2.0, end=3.0, text="c", speaker=None),
+        ],
+        duration_seconds=3.0,
+        language="es",
+    )
+    renamed = t.rename_speakers({"SPEAKER_00": "Ana", "SPEAKER_01": "  "})
+    assert renamed == 1  # el mapping vacío/en blanco se ignora
+    assert t.segments[0].speaker == "Ana"
+    assert t.segments[1].speaker == "SPEAKER_01"
+    assert t.segments[2].speaker is None
+
+
 def test_transcript_roundtrip() -> None:
     t = Transcript(
         segments=[TranscriptSegment(start=0.0, end=1.0, text="hi")],

@@ -14,6 +14,15 @@ from pathlib import Path
 
 from loguru import logger
 
+# Contenedores de vídeo (grabaciones de Meet/Teams/Zoom · UX-13): la pista de audio se extrae
+# con ffmpeg antes de transcribir, aunque el preprocesado esté desactivado en settings.
+_VIDEO_SUFFIXES = frozenset({".mp4", ".webm", ".mkv", ".mov", ".avi"})
+
+
+def needs_audio_extraction(path: Path) -> bool:
+    """True si el fichero es un contenedor de vídeo del que conviene extraer el audio (UX-13)."""
+    return path.suffix.lower() in _VIDEO_SUFFIXES
+
 
 def preprocess_audio(
     input_path: Path,

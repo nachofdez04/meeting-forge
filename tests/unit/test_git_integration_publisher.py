@@ -24,7 +24,9 @@ pytestmark = pytest.mark.skipif(
 def _init_repo(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-b", "main"], cwd=path, capture_output=True, check=True)
-    subprocess.run(["git", "config", "user.email", "t@t.com"], cwd=path, capture_output=True, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "t@t.com"], cwd=path, capture_output=True, check=True
+    )
     subprocess.run(["git", "config", "user.name", "T"], cwd=path, capture_output=True, check=True)
     (path / "README.md").write_text("# Repo\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=path, capture_output=True, check=True)
@@ -56,7 +58,9 @@ class TestPublishMeeting:
         val_store.save_state(meeting_dir, state)
 
         with (
-            patch.object(pub_module.pr_module, "create_pr", return_value="https://github.com/pull/1"),
+            patch.object(
+                pub_module.pr_module, "create_pr", return_value="https://github.com/pull/1"
+            ),
             patch.object(pub_module.repo_module, "push"),
             patch.object(pub_module, "settings") as mock_settings,
         ):
@@ -86,7 +90,9 @@ class TestPublishMeeting:
         val_store.save_state(meeting_dir, state)
 
         with (
-            patch.object(pub_module.pr_module, "create_pr", return_value="https://github.com/pull/2"),
+            patch.object(
+                pub_module.pr_module, "create_pr", return_value="https://github.com/pull/2"
+            ),
             patch.object(pub_module.repo_module, "push"),
             patch.object(pub_module, "settings") as mock_settings,
         ):
@@ -128,9 +134,7 @@ class TestPublishMeeting:
         with patch.object(pub_module, "settings") as mock_settings:
             mock_settings.git_integration_enabled = False
             with pytest.raises(pub_module.PublishError, match="desactivada"):
-                pub_module.publish_meeting(
-                    tmp_path, _make_metadata(), MeetingValidationState(), []
-                )
+                pub_module.publish_meeting(tmp_path, _make_metadata(), MeetingValidationState(), [])
 
     def test_publish_json_not_written_on_git_error(self, tmp_path: Path) -> None:
         meeting_dir = tmp_path / "meeting"
@@ -141,7 +145,11 @@ class TestPublishMeeting:
 
         with (
             patch.object(pub_module, "settings") as mock_settings,
-            patch.object(pub_module.repo_module, "ensure_repo", side_effect=pub_module.repo_module.GitOperationError("fail")),
+            patch.object(
+                pub_module.repo_module,
+                "ensure_repo",
+                side_effect=pub_module.repo_module.GitOperationError("fail"),
+            ),
         ):
             mock_settings.git_integration_enabled = True
             mock_settings.git_target_repo_path = tmp_path / "repo"

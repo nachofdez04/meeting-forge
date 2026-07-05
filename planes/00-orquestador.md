@@ -4,6 +4,8 @@
 > y define el **roadmap priorizado** que ata los dos planes de detalle:
 > - [`01-bugs-y-deuda-tecnica.md`](01-bugs-y-deuda-tecnica.md) — qué arreglar.
 > - [`02-features.md`](02-features.md) — qué construir.
+> - [`03-produccion.md`](03-produccion.md) — qué falta para salir a producción (añadido 2026-07-05).
+> - [`04-mejoras-usuario.md`](04-mejoras-usuario.md) — mejoras de producto para el usuario final (añadido 2026-07-05).
 
 ---
 

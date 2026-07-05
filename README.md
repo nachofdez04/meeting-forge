@@ -50,6 +50,33 @@ uv sync
 cp .env.example .env
 ```
 
+### Docker (opcional)
+
+Imagen reproducible con `ffmpeg` y dependencias fijadas por `uv.lock`:
+
+```bash
+docker build -t meeting-forge .
+# UI (http://localhost:8501)
+docker run --rm -p 8501:8501 --env-file .env meeting-forge
+# CLI (run / index / eval / demo / check)
+docker run --rm --env-file .env meeting-forge uv run meeting-forge check
+```
+
+> Los modelos de Whisper/embeddings se descargan en el primer uso; monta un volumen en
+> `/root/.cache` (`-v hf-cache:/root/.cache`) para no re-descargarlos en cada arranque.
+
+### Diarización de hablantes (opcional)
+
+Asigna un `speaker` a cada segmento del transcript con **pyannote.audio** (dependencia pesada, opt-in):
+
+```bash
+uv sync --group diarization
+```
+
+Activa en `.env`: `DIARIZATION_ENABLED=true` y `HUGGINGFACE_TOKEN=hf_...` (con la
+[licencia del modelo](https://huggingface.co/pyannote/speaker-diarization-3.1) aceptada). Es
+**tolerante a fallos**: si falta la dependencia, el token o la licencia, se transcribe sin speakers.
+
 ## Uso
 
 > **Entrypoints CLI** (tras `uv sync`): `meeting-forge run|index|eval|demo|check`. Son la forma
@@ -76,7 +103,13 @@ uv run python scripts/index_docs.py
 uv run python scripts/index_docs.py --clear
 # Para añadir rutas extra:
 uv run python scripts/index_docs.py --path C:/otros/docs --path C:/mas/docs
+# Para incluir además TODO el repo en el corpus (no recomendado: añade ruido):
+uv run python scripts/index_docs.py --include-repo
 ```
+
+Por defecto se indexa el **corpus de documentación** (`DOCS_PATH` + rutas `--path`), no el repo
+entero, para que la provenance cite documentación real y no plantillas/tests/planes. Si no se
+configura ninguna ruta, se cae al repo como último recurso (define `DOCS_PATH` para un corpus limpio).
 
 El índice persiste en `data/chromadb/`. Idempotente: ejecutarlo dos veces no duplica chunks.
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import BaseModel
 
 from meeting_forge.analysis import llm_client
 from meeting_forge.analysis.llm_client import (
@@ -40,8 +41,72 @@ class TestStripMarkdownFences:
         assert _strip_markdown_fences('   ```json\n{"a": 1}\n```   ') == '{"a": 1}'
 
 
+class _Model(BaseModel):
+    a: int
+
+
+class TestParseStructuredWithRetry:
+    def test_retries_until_valid(self) -> None:
+        # BUG-3: una respuesta inválida (JSON malformado/truncado) reintenta en vez de tirar el run.
+        attempts = {"n": 0}
+
+        def _produce() -> str:
+            attempts["n"] += 1
+            return "no es json" if attempts["n"] < 2 else '{"a": 1}'
+
+        result = llm_client._parse_structured_with_retry(
+            _produce, _Model, clean=lambda s: s, retries=3
+        )
+        assert result.a == 1
+        assert attempts["n"] == 2
+
+    def test_raises_after_exhaustion(self) -> None:
+        with pytest.raises(RuntimeError, match="JSON válido"):
+            llm_client._parse_structured_with_retry(
+                lambda: "sigue sin ser json", _Model, clean=lambda s: s, retries=2
+            )
+
+    def test_applies_clean_function(self) -> None:
+        result = llm_client._parse_structured_with_retry(
+            lambda: '```json\n{"a": 5}\n```',
+            _Model,
+            clean=_strip_markdown_fences,
+            retries=0,
+        )
+        assert result.a == 5
+
+    def test_validation_error_retries(self) -> None:
+        # JSON válido pero que no cumple el schema (campo de tipo incorrecto) también reintenta.
+        attempts = {"n": 0}
+
+        def _produce() -> str:
+            attempts["n"] += 1
+            return '{"a": "no-int"}' if attempts["n"] < 2 else '{"a": 7}'
+
+        result = llm_client._parse_structured_with_retry(
+            _produce, _Model, clean=lambda s: s, retries=3
+        )
+        assert result.a == 7
+        assert attempts["n"] == 2
+
+
 class _Transient(Exception):
     """Error transitorio de prueba para el helper de reintentos."""
+
+
+class TestAnthropicEmptyContent:
+    def test_empty_content_raises_clear_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Una respuesta con content=[] lanzaba IndexError; debe ser un RuntimeError legible.
+        from types import SimpleNamespace
+
+        monkeypatch.setattr(llm_client.settings, "anthropic_api_key", "test-key")
+        provider = llm_client.AnthropicProvider()
+        fake_response = SimpleNamespace(content=[], usage=None)
+        provider.client = SimpleNamespace(  # type: ignore[assignment]
+            messages=SimpleNamespace(create=lambda **kwargs: fake_response)
+        )
+        with pytest.raises(RuntimeError, match="sin contenido"):
+            provider.complete("hola")
 
 
 class TestApiKeyValidation:

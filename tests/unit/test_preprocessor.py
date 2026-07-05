@@ -6,13 +6,22 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from meeting_forge.ingestion.preprocessor import preprocess_audio
+from meeting_forge.ingestion.preprocessor import needs_audio_extraction, preprocess_audio
 
 
 def _audio(tmp_path: Path) -> Path:
     audio = tmp_path / "a.wav"
     audio.write_bytes(b"RIFFdummy")
     return audio
+
+
+def test_needs_audio_extraction_for_video_containers() -> None:
+    # UX-13: los contenedores de vídeo (Meet/Teams/Zoom) fuerzan la extracción de audio.
+    assert needs_audio_extraction(Path("reunion.mp4")) is True
+    assert needs_audio_extraction(Path("reunion.MKV")) is True
+    assert needs_audio_extraction(Path("reunion.webm")) is True
+    assert needs_audio_extraction(Path("reunion.wav")) is False
+    assert needs_audio_extraction(Path("reunion.mp3")) is False
 
 
 def test_disabled_returns_original(tmp_path: Path) -> None:

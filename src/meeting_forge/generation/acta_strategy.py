@@ -52,14 +52,8 @@ class ActaStrategy:
             markdown = markdown_body.rstrip() + "\n"
 
         # Recopilar sources únicas usadas
-        all_sources = [
-            s
-            for d in insights.decisions
-            for s in d.sources
-        ] + [
-            s
-            for a in insights.action_items
-            for s in a.sources
+        all_sources = [s for d in insights.decisions for s in d.sources] + [
+            s for a in insights.action_items for s in a.sources
         ]
         unique_sources = list(
             {(s.source_path, s.line_start, s.line_end): s for s in all_sources}.values()

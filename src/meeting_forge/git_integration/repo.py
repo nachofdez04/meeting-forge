@@ -21,6 +21,14 @@ class GitOperationError(RuntimeError):
         self.stderr = stderr
 
 
+class EmptyCommitError(GitOperationError):
+    """No hay nada que commitear (el contenido aprobado ya coincide con el del repo).
+
+    Subtipo benigno de `GitOperationError` (B10): permite a las capas superiores distinguir
+    "ya está actualizado" de un fallo real de git y mostrarlo como información, no como error.
+    """
+
+
 def _run(args: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         args,
@@ -146,7 +154,7 @@ def add_and_commit(repo: Path, paths: list[Path], message: str) -> str:
 
     staged = _run(["git", "diff", "--cached", "--quiet"], cwd=repo, check=False)
     if staged.returncode == 0:
-        raise GitOperationError(
+        raise EmptyCommitError(
             "No hay cambios que publicar: el contenido aprobado ya coincide con el del repositorio."
         )
 

@@ -36,3 +36,21 @@ def test_ensure_data_dirs_creates_directories(
 def test_settings_prompts_dir_path() -> None:
     """prompts_dir debe apuntar a la carpeta prompts/ del repo."""
     assert settings.prompts_dir.name == "prompts"
+
+
+class TestDerivedPaths:
+    """Los paths derivados siguen a su base cuando esta se sobreescribe (DATA_DIR/PROJECT_ROOT)."""
+
+    def test_chromadb_path_follows_data_dir(self, tmp_path: Path) -> None:
+        s = Settings(_env_file=None, data_dir=tmp_path / "mydata")
+        assert s.chromadb_path == tmp_path / "mydata" / "chromadb"
+
+    def test_data_and_prompts_follow_project_root(self, tmp_path: Path) -> None:
+        s = Settings(_env_file=None, project_root=tmp_path)
+        assert s.data_dir == tmp_path / "data"
+        assert s.prompts_dir == tmp_path / "prompts"
+        assert s.chromadb_path == tmp_path / "data" / "chromadb"
+
+    def test_explicit_chromadb_path_wins(self, tmp_path: Path) -> None:
+        s = Settings(_env_file=None, data_dir=tmp_path / "d", chromadb_path=tmp_path / "elsewhere")
+        assert s.chromadb_path == tmp_path / "elsewhere"

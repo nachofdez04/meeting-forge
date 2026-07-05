@@ -110,9 +110,7 @@ class TestBuildConsolidatedAdrFilename:
 
 
 class TestBuildActaFilename:
-    def _meta(
-        self, meeting_id: str, date: str | None = None
-    ) -> MeetingMetadata:
+    def _meta(self, meeting_id: str, date: str | None = None) -> MeetingMetadata:
         return MeetingMetadata(meeting_id=meeting_id, date=date)
 
     def test_with_date(self) -> None:

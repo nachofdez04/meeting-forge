@@ -56,6 +56,32 @@ class TestRunAutoMode:
         assert state.records["adr-0001.md"].status == ValidationStatus.PENDING
 
 
+class TestAutoPublishNothingToPublish:
+    def test_nothing_to_publish_is_benign(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # NothingToPublishError (contenido ya publicado) no debe tratarse como fallo:
+        # el modo automático termina sin lanzar y sin marcar published.
+        from meeting_forge.git_integration import publisher
+
+        monkeypatch.setattr(automation.settings, "auto_approve_enabled", True)
+        monkeypatch.setattr(automation.settings, "auto_approve_kinds", ["acta"])
+        monkeypatch.setattr(automation.settings, "auto_publish_enabled", True)
+        monkeypatch.setattr(automation.settings, "git_integration_enabled", True)
+
+        def _boom(*args: object, **kwargs: object) -> None:
+            raise publisher.NothingToPublishError("ya coincide")
+
+        monkeypatch.setattr(publisher, "publish_meeting", _boom)
+
+        docs = [_doc("acta.md", DocumentKind.ACTA, GenerationMode.ACTA)]
+        result = run_auto_mode(tmp_path, docs, _metadata())
+
+        assert result.auto_approved == ["acta.md"]
+        assert result.published is False
+        assert result.pr_url == ""
+
+
 class TestAutoApproveStore:
     def test_marks_only_allowed_kinds(self, tmp_path: Path) -> None:
         docs = [

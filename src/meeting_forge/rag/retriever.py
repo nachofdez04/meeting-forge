@@ -38,19 +38,30 @@ class Retriever:
         self.store = store
         self.embeddings = embeddings
 
-    def retrieve(self, query: str, top_k: int | None = None) -> list[RetrievalResult]:
-        """Lookup de un único query."""
+    def retrieve(
+        self, query: str, top_k: int | None = None, min_score: float | None = None
+    ) -> list[RetrievalResult]:
+        """Lookup de un único query, descartando chunks por debajo de `min_score` (M2)."""
         k = top_k or settings.retrieval_top_k
+        threshold = settings.retrieval_min_score if min_score is None else min_score
         vec = self.embeddings.embed_query(query)
-        return self.store.query(vec, k)
+        results = self.store.query(vec, k)
+        if threshold > 0.0:
+            results = [r for r in results if r.score >= threshold]
+        return results
 
     def retrieve_for_transcript(
         self,
         transcript: Transcript,
         k_total: int | None = None,
         per_query_k: int | None = None,
+        min_score: float | None = None,
     ) -> list[RetrievalResult]:
-        """Retrieve por ventanas del transcript, agregando y deduplicando."""
+        """Retrieve por ventanas del transcript, agregando y deduplicando.
+
+        Aplica el umbral `min_score` (M2/F6) por ventana, descartando chunks poco afines antes de
+        agregar; así el contexto y la provenance solo incluyen evidencia con relevancia suficiente.
+        """
         text = transcript.to_text()
         if not text.strip():
             return []
@@ -65,7 +76,7 @@ class Retriever:
 
         best: dict[str, RetrievalResult] = {}
         for w in windows:
-            results = self.retrieve(w, top_k=per_q)
+            results = self.retrieve(w, top_k=per_q, min_score=min_score)
             for r in results:
                 existing = best.get(r.chunk.chunk_id)
                 if existing is None or r.score > existing.score:

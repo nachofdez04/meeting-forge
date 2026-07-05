@@ -47,6 +47,11 @@ class CitationRegistry:
     def size(self) -> int:
         return len(self._ordered)
 
+    @property
+    def ordered_refs(self) -> list[SourceRef]:
+        """SourceRefs registrados (deduplicados), en orden de numeración (1-indexed)."""
+        return list(self._ordered)
+
     def build_sources_block(self) -> str:
         """Genera el bloque de contexto `[#N] path:Lstart-Lend (section)` para inyectar en prompts.
 

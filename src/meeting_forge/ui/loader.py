@@ -61,7 +61,9 @@ def list_meetings(base_dir: Path) -> list[MeetingSummary]:
     for subdir in base_dir.iterdir():
         if not subdir.is_dir():
             continue
-        result_files = list(subdir.glob("*_result.json"))
+        # sorted(): el orden de glob no está garantizado; con varios *_result.json el elegido
+        # debe ser determinista y el mismo que en load_meeting.
+        result_files = sorted(subdir.glob("*_result.json"))
         if not result_files:
             continue
         result_path = result_files[0]
@@ -97,7 +99,7 @@ def list_meetings(base_dir: Path) -> list[MeetingSummary]:
 
 def load_meeting(meeting_dir: Path) -> MeetingData:
     """Carga el result.json de meeting_dir y devuelve un MeetingData."""
-    result_files = list(meeting_dir.glob("*_result.json"))
+    result_files = sorted(meeting_dir.glob("*_result.json"))
     if not result_files:
         raise FileNotFoundError(f"No se encontró *_result.json en {meeting_dir}")
     result_path = result_files[0]

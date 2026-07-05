@@ -220,11 +220,12 @@ class AdrStrategy:
 
             raw = self._call_llm(decision, local_registry)
 
-            # Remapear: #local_idx → [^global_idx]
-            # local_idx (1-indexed) → decision.sources[local_idx-1] → global_registry.register
+            # Remapear: #local_idx → [^global_idx]. La numeración local que vio el LLM es la del
+            # registro (que DEDUPLICA), no la de decision.sources cruda: con fuentes repetidas en
+            # una decisión, enumerar decision.sources desalinearía #N con la fuente real.
             local_to_global = {
                 local_idx: global_registry.register(ref)
-                for local_idx, ref in enumerate(decision.sources, start=1)
+                for local_idx, ref in enumerate(local_registry.ordered_refs, start=1)
             }
 
             resolver = _remap_resolver(local_to_global)

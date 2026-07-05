@@ -100,3 +100,28 @@ def test_retriever_empty_transcript_returns_empty() -> None:
     retriever = Retriever(store=_FakeStore([]), embeddings=_FakeEmbeddings())
     transcript = Transcript(segments=[], duration_seconds=0.0)
     assert retriever.retrieve_for_transcript(transcript) == []
+
+
+def test_retrieve_filters_below_min_score() -> None:
+    # M2: con min_score se descartan los chunks poco afines.
+    scripted = [
+        [
+            RetrievalResult(chunk=_chunk("a"), score=0.8),
+            RetrievalResult(chunk=_chunk("b"), score=0.2),
+        ]
+    ]
+    retriever = Retriever(store=_FakeStore(scripted), embeddings=_FakeEmbeddings())
+    results = retriever.retrieve("consulta", top_k=5, min_score=0.5)
+    assert [r.chunk.chunk_id for r in results] == ["a"]
+
+
+def test_retrieve_no_filter_when_min_score_zero() -> None:
+    scripted = [
+        [
+            RetrievalResult(chunk=_chunk("a"), score=0.8),
+            RetrievalResult(chunk=_chunk("b"), score=0.2),
+        ]
+    ]
+    retriever = Retriever(store=_FakeStore(scripted), embeddings=_FakeEmbeddings())
+    results = retriever.retrieve("consulta", top_k=5, min_score=0.0)
+    assert {r.chunk.chunk_id for r in results} == {"a", "b"}

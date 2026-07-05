@@ -67,9 +67,9 @@ class TestInitializePending:
 class TestMutations:
     def test_mark_approved(self) -> None:
         state = MeetingValidationState()
-        state.records["f.md"] = val_store.mark_approved(
-            MeetingValidationState(), "f.md"
-        ).records["f.md"]
+        state.records["f.md"] = val_store.mark_approved(MeetingValidationState(), "f.md").records[
+            "f.md"
+        ]
         assert state.records["f.md"].status == ValidationStatus.APPROVED
         assert state.records["f.md"].edited_content is None
         assert state.records["f.md"].validated_at is not None

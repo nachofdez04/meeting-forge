@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from meeting_forge.git_integration.repo import (
+    EmptyCommitError,
     GitOperationError,
     add_and_commit,
     checkout_branch,
@@ -121,12 +122,13 @@ class TestAddAndCommit:
         assert len(sha) <= 12
 
     def test_no_changes_raises(self, tmp_path: Path) -> None:
-        # B10: reescribir el mismo contenido no deja nada staged → error claro, no crash de git.
+        # B10/BUG-7: reescribir el mismo contenido no deja nada staged → EmptyCommitError
+        # (subtipo benigno de GitOperationError), no un crash de git.
         repo = _init_repo(tmp_path / "repo")
         paths = write_files(repo, [("dup.md", "same")])
         add_and_commit(repo, paths, "first")
         paths_again = write_files(repo, [("dup.md", "same")])
-        with pytest.raises(GitOperationError, match="No hay cambios que publicar"):
+        with pytest.raises(EmptyCommitError, match="No hay cambios que publicar"):
             add_and_commit(repo, paths_again, "second")
 
 

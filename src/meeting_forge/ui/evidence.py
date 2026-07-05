@@ -18,13 +18,26 @@ class SliceResult:
 
 
 @functools.lru_cache(maxsize=64)
-def _read_file_lines(resolved_path: str) -> tuple[str, ...] | None:
-    """Lee el archivo y retorna sus líneas como tuple inmutable. Cachea por path."""
+def _read_file_lines_cached(resolved_path: str, mtime: float) -> tuple[str, ...] | None:
+    """Lee el archivo y retorna sus líneas como tuple inmutable. Cachea por (path, mtime)."""
     try:
         content = Path(resolved_path).read_text(encoding="utf-8")
         return tuple(content.splitlines())
     except OSError:
         return None
+
+
+def _read_file_lines(resolved_path: str) -> tuple[str, ...] | None:
+    """Lee líneas cacheando por (path, mtime).
+
+    BUG-4: incluir el mtime en la clave evita servir evidencia obsoleta si el documento fuente
+    cambia en disco mientras la UI sigue viva (la trazabilidad debe reflejar el archivo actual).
+    """
+    try:
+        mtime = Path(resolved_path).stat().st_mtime
+    except OSError:
+        return None
+    return _read_file_lines_cached(resolved_path, mtime)
 
 
 def read_source_slice(
@@ -68,8 +81,7 @@ def read_source_slice(
             found=False,
             resolved_path=resolved_str,
             warning=(
-                f"Línea de inicio {line_start} fuera de rango "
-                f"(el archivo tiene {total} líneas)."
+                f"Línea de inicio {line_start} fuera de rango (el archivo tiene {total} líneas)."
             ),
         )
 

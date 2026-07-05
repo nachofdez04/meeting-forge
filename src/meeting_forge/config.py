@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 from loguru import logger
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,8 +30,18 @@ class Settings(BaseSettings):
     whisper_compute_type: Literal["int8", "float16", "float32"] = "int8"
     # Idioma del audio (None = autodetección de faster-whisper)
     whisper_language: str | None = None
+    # Texto que condiciona el vocabulario de Whisper (UX-1): términos técnicos y nombres propios
+    # del proyecto que Whisper suele transcribir mal. Se combina con `data/glossary.txt` (un
+    # término por línea, `#` comenta) y con el vocabulario puntual pasado por la UI/CLI.
+    whisper_initial_prompt: str = ""
     # Preprocesado opcional del audio con ffmpeg (mono + 16 kHz + loudnorm) antes de transcribir · F9
     audio_preprocess_enabled: bool = False
+    # Diarización opcional de hablantes con pyannote.audio (M7). Desactivada por defecto: requiere el
+    # grupo `diarization` (uv sync --group diarization) y un token de Hugging Face con la licencia del
+    # modelo aceptada. Tolerante a fallos: si algo falla, se transcribe sin speakers.
+    diarization_enabled: bool = False
+    huggingface_token: str = ""
+    diarization_model: str = "pyannote/speaker-diarization-3.1"
 
     # --- LLM Provider ---
     llm_provider: Literal["anthropic", "openai", "ollama"] = "anthropic"
@@ -57,10 +67,18 @@ class Settings(BaseSettings):
     chroma_collection: str = "meeting_forge_docs"
     retrieval_top_k: int = 5
     retrieval_per_query_k: int = 3
+    # Umbral mínimo de score [0,1] para conservar un chunk recuperado (0.0 = sin filtro) · M2/F6.
+    # El score ya está clampeado a [0,1] en el vector store (B8); subirlo descarta chunks poco afines.
+    retrieval_min_score: float = 0.0
     chunk_max_chars: int = 1500
     chunk_overlap_chars: int = 200
     transcript_query_chars: int = 500
     context_max_chars: int = 8000
+    # Búsqueda entre reuniones (UX-8): indexa cada reunión procesada en una colección separada.
+    search_index_enabled: bool = True
+    # Memoria RAG (UX-9): indexa las actas/ADRs aprobados en el corpus para que las reuniones
+    # futuras puedan citarlos. Se ejecuta como paso best-effort tras publicar/auto-aprobar.
+    rag_index_generated_docs: bool = True
 
     # --- Generation (Fase 2) ---
     generation_enabled: bool = True
@@ -78,6 +96,24 @@ class Settings(BaseSettings):
     auto_approve_enabled: bool = False
     auto_approve_kinds: list[str] = ["acta"]
     auto_publish_enabled: bool = False
+
+    @model_validator(mode="after")
+    def _derive_dependent_paths(self) -> "Settings":
+        """Recalcula los paths derivados cuando su base se sobreescribe por entorno.
+
+        Los defaults a nivel de clase (`data_dir = project_root / "data"`, etc.) se evalúan una
+        sola vez con los valores por defecto: si el usuario define PROJECT_ROOT o DATA_DIR, los
+        derivados no explícitamente configurados deben seguir a su base (si no, Chroma escribiría
+        fuera del data_dir configurado).
+        """
+        explicit = self.model_fields_set
+        if "data_dir" not in explicit:
+            self.data_dir = self.project_root / "data"
+        if "prompts_dir" not in explicit:
+            self.prompts_dir = self.project_root / "prompts"
+        if "chromadb_path" not in explicit:
+            self.chromadb_path = self.data_dir / "chromadb"
+        return self
 
     @field_validator("generation_modes", "auto_approve_kinds", mode="before")
     @classmethod

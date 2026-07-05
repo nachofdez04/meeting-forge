@@ -4,7 +4,20 @@ from pydantic import BaseModel, Field
 
 from ..rag.schemas import SourceRef
 
-__all__ = ["ActionItem", "Decision", "MeetingInsights", "SourceRef"]
+__all__ = ["ActionItem", "Decision", "MeetingInsights", "SourceRef", "TranscriptRef"]
+
+
+class TranscriptRef(BaseModel):
+    """Referencia a un momento del transcript donde se discutió algo (UX-6).
+
+    Resuelta desde los marcadores `S<n>` que el LLM asocia a cada decisión/tarea; guarda el índice
+    de segmento y sus tiempos para poder saltar al minuto exacto del audio.
+    """
+
+    segment_index: int = Field(..., ge=0, description="Índice del segmento en el transcript")
+    start: float = Field(..., description="Inicio del segmento en segundos")
+    end: float = Field(..., description="Fin del segmento en segundos")
+    text: str = Field(..., description="Texto del segmento citado")
 
 
 class Decision(BaseModel):
@@ -19,6 +32,10 @@ class Decision(BaseModel):
         default_factory=list,
         description="Citas a chunks de documentación que respaldan la decisión",
     )
+    transcript_refs: list[TranscriptRef] = Field(
+        default_factory=list,
+        description="Momentos del transcript donde se discutió la decisión (UX-6)",
+    )
 
 
 class ActionItem(BaseModel):
@@ -31,6 +48,10 @@ class ActionItem(BaseModel):
         default_factory=list,
         description="Citas a chunks de documentación relacionados",
     )
+    transcript_refs: list[TranscriptRef] = Field(
+        default_factory=list,
+        description="Momentos del transcript donde se mencionó la tarea (UX-6)",
+    )
 
 
 class MeetingInsights(BaseModel):
@@ -38,7 +59,5 @@ class MeetingInsights(BaseModel):
 
     decisions: list[Decision] = Field(default_factory=list)
     action_items: list[ActionItem] = Field(default_factory=list)
-    topics: list[str] = Field(
-        default_factory=list, description="Temas principales discutidos"
-    )
-    summary: str = Field("", description="Resumen ejecutivo de la reunión")
+    topics: list[str] = Field(default_factory=list, description="Temas principales discutidos")
+    summary: str = Field(default="", description="Resumen ejecutivo de la reunión")

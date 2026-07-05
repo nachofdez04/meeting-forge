@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from meeting_forge.rag.indexer import DocumentIndexer
+from meeting_forge.rag.indexer import DocumentIndexer, resolve_corpus_paths
 from meeting_forge.rag.schemas import DocumentChunk, RetrievalResult
 
 
@@ -96,10 +96,48 @@ class TestCollectMarkdown:
         found = DocumentIndexer._collect_markdown([tmp_path], exclude={"skipme"})
         assert {p.name for p in found} == {"a.md"}
 
+    def test_excludes_project_noise_dirs(self, tmp_path: Path) -> None:
+        # BUG-1: prompts/, tests/, evaluation/, notebooks/, scripts/ y planes/ no son
+        # documentación citable y no deben contaminar el corpus del RAG.
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "real.md").write_text("# Real", encoding="utf-8")
+        for noise_dir, fname in [
+            ("prompts", "v1.md"),
+            ("tests", "fixture.md"),
+            ("evaluation", "report.md"),
+            ("notebooks", "nb.md"),
+            ("scripts", "x.md"),
+            ("planes", "roadmap.md"),
+        ]:
+            (tmp_path / noise_dir).mkdir()
+            (tmp_path / noise_dir / fname).write_text("# noise", encoding="utf-8")
+
+        found = DocumentIndexer._collect_markdown([tmp_path])
+
+        assert {p.name for p in found} == {"real.md"}
+
 
 # ---------------------------------------------------------------------------
 # B2 · reindexar un documento editado no deja chunks obsoletos
 # ---------------------------------------------------------------------------
+
+
+class TestResolveCorpusPaths:
+    def test_docs_path_and_extra_exclude_repo_by_default(self, tmp_path: Path) -> None:
+        # M1: por defecto el corpus es docs_path + --path, NO el repo entero.
+        docs = tmp_path / "docs"
+        extra = tmp_path / "more"
+        root = tmp_path / "repo"
+        assert resolve_corpus_paths(docs, [extra], root, include_repo=False) == [docs, extra]
+
+    def test_include_repo_appends_root(self, tmp_path: Path) -> None:
+        docs = tmp_path / "docs"
+        root = tmp_path / "repo"
+        assert resolve_corpus_paths(docs, None, root, include_repo=True) == [docs, root]
+
+    def test_falls_back_to_repo_when_nothing_configured(self, tmp_path: Path) -> None:
+        root = tmp_path / "repo"
+        assert resolve_corpus_paths(None, None, root, include_repo=False) == [root]
 
 
 class TestReindexPrunesStale:
@@ -121,6 +159,27 @@ class TestReindexPrunesStale:
         assert "doc.md" in store.deleted_sources
         assert first_ids.isdisjoint(set(store.chunks)), "los chunks viejos no deben sobrevivir"
         assert all(c.source_path == "doc.md" for c in store.chunks.values())
+
+
+class TestExternalPathsDoNotCollide:
+    def test_same_basename_outside_root_keeps_both_sources(self, tmp_path: Path) -> None:
+        # Ficheros fuera de `root` (DOCS_PATH externo) no deben colapsar a su basename:
+        # dos README.md homónimos se borraban mutuamente los chunks vía delete_by_source.
+        docs = tmp_path / "docs"
+        (docs / "a").mkdir(parents=True)
+        (docs / "b").mkdir(parents=True)
+        (docs / "a" / "README.md").write_text("# A\n\ncontenido a\n", encoding="utf-8")
+        (docs / "b" / "README.md").write_text("# B\n\ncontenido b\n", encoding="utf-8")
+        indexer, store = _make_indexer()
+
+        # root apunta a OTRO directorio: ninguno de los dos ficheros es relativo a él.
+        root = tmp_path / "repo"
+        root.mkdir()
+        indexer.index_paths([docs], root=root)
+
+        sources = {c.source_path for c in store.chunks.values()}
+        assert len(sources) == 2, "cada fichero externo debe conservar un source_path único"
+        assert all(s.endswith("README.md") for s in sources)
 
 
 class TestSyncPrunesDeletedFiles:

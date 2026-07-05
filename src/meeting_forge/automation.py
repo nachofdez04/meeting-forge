@@ -66,6 +66,9 @@ def run_auto_mode(
             logger.info(
                 "Auto-publicado: rama {b} · {p}", b=pub.branch, p=result.pr_url or "(sin PR)"
             )
+        except publisher.NothingToPublishError as exc:
+            # Caso benigno (el contenido aprobado ya coincide con el repo): info, no error.
+            logger.info("Auto-publicación omitida: {e}", e=exc)
         except publisher.PublishError as exc:
             logger.error("Auto-publicación fallida: {e}", e=exc)
 

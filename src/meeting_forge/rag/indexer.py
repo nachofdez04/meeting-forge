@@ -16,6 +16,12 @@ from .vector_store import VectorStore
 # Directorios que NUNCA deben indexarse al recorrer un repo (B1): entornos virtuales,
 # control de versiones, datos, cachés y artefactos de build. Los dirs ocultos (".algo")
 # también se podan automáticamente.
+#
+# Además del ruido de dependencias/cachés, se excluyen directorios del propio proyecto que
+# NO son documentación citable por las reuniones y que contaminan la provenance del RAG:
+# `prompts/` (las plantillas de prompt con sus placeholders), `tests/` (fixtures de prueba),
+# `evaluation/` (datasets y reportes generados), `notebooks/`, `scripts/` y `planes/`
+# (planificación interna del repo, no documentación del producto).
 _DEFAULT_EXCLUDE_DIRS = frozenset(
     {
         ".venv",
@@ -32,8 +38,44 @@ _DEFAULT_EXCLUDE_DIRS = frozenset(
         ".tox",
         "build",
         "dist",
+        # Directorios del proyecto que son ruido para el corpus de documentación.
+        "prompts",
+        "tests",
+        "evaluation",
+        "notebooks",
+        "scripts",
+        "planes",
     }
 )
+
+
+def resolve_corpus_paths(
+    docs_path: Path | None,
+    extra_paths: list[Path] | None,
+    project_root: Path,
+    *,
+    include_repo: bool = False,
+) -> list[Path]:
+    """Resuelve las rutas a indexar priorizando documentación real sobre el repo entero (M1).
+
+    - `docs_path` (DOCS_PATH) y `extra_paths` (--path) forman el corpus de documentación del producto.
+    - El repo completo solo se añade si `include_repo=True` (opt-in explícito).
+    - Si no se configura ninguna ruta, se cae al repo como último recurso (experiencia out-of-box);
+      conviene definir `DOCS_PATH` para un corpus limpio y una provenance fiable.
+
+    Complementa a `_DEFAULT_EXCLUDE_DIRS` (B1): aunque se incluya el repo, el ruido se poda; pero el
+    default deja de mezclar la documentación de producto con README/ARCHITECTURE/etc. del propio repo.
+    """
+    paths: list[Path] = []
+    if docs_path is not None:
+        paths.append(docs_path)
+    if extra_paths:
+        paths.extend(extra_paths)
+    if include_repo:
+        paths.append(project_root)
+    if not paths:
+        paths.append(project_root)
+    return paths
 
 
 def _walk_markdown(root: Path, exclude: set[str]) -> Iterator[Path]:
@@ -160,9 +202,16 @@ class DocumentIndexer:
 
     @staticmethod
     def _relative_path(md_file: Path, root: Path | None) -> str:
-        if root is None:
-            return md_file.name
-        try:
-            return str(md_file.relative_to(root.resolve())).replace("\\", "/")
-        except ValueError:
-            return md_file.name
+        """Devuelve el `source_path` a almacenar: relativo a `root` si es posible.
+
+        Para ficheros fuera de `root` (p.ej. un DOCS_PATH externo) se usa la ruta absoluta POSIX,
+        no el basename: colapsar a `md_file.name` hacía colisionar ficheros homónimos de
+        directorios distintos (cada uno borraba los chunks del otro vía `delete_by_source` y la
+        provenance apuntaba al fichero equivocado).
+        """
+        if root is not None:
+            try:
+                return str(md_file.relative_to(root.resolve())).replace("\\", "/")
+            except ValueError:
+                pass
+        return md_file.resolve().as_posix()

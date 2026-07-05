@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .analysis.schemas import ActionItem, Decision, MeetingInsights
+from .analysis.schemas import ActionItem, Decision, MeetingInsights, TranscriptRef
 from .generation.acta_strategy import ActaStrategy
 from .generation.schemas import MeetingMetadata
 from .rag.schemas import SourceRef
@@ -34,6 +34,14 @@ def _demo_insights() -> MeetingInsights:
                 owners=["Nacho"],
                 tags=["arquitectura", "rag"],
                 sources=[ref],
+                transcript_refs=[
+                    TranscriptRef(
+                        segment_index=1,
+                        start=5.0,
+                        end=9.0,
+                        text="Adoptamos ChromaDB como vector store.",
+                    )
+                ],
             ),
             Decision(
                 title="Transcripción local con faster-whisper",

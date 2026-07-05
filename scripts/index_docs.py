@@ -15,7 +15,7 @@ if str(_SRC) not in sys.path:
 
 from meeting_forge.config import ensure_data_dirs, settings  # noqa: E402
 from meeting_forge.rag.embeddings import SentenceTransformerEmbeddings  # noqa: E402
-from meeting_forge.rag.indexer import DocumentIndexer  # noqa: E402
+from meeting_forge.rag.indexer import DocumentIndexer, resolve_corpus_paths  # noqa: E402
 from meeting_forge.rag.vector_store import ChromaVectorStore  # noqa: E402
 
 app = typer.Typer(add_completion=False, help="Indexa Markdown en ChromaDB")
@@ -39,12 +39,19 @@ def main(
         "--sync",
         help="Tras indexar, poda los chunks de documentos que ya no existen (borrados/renombrados)",
     ),
+    include_repo: bool = typer.Option(
+        False,
+        "--include-repo",
+        help="Incluye TODO el repo en el corpus (por defecto solo DOCS_PATH/--path)",
+    ),
 ) -> None:
     """Indexa documentación Markdown.
 
-    Por defecto indexa:
-      - El root del repo (`*.md` recursivo)
+    Por defecto indexa el corpus de documentación del producto:
       - El directorio apuntado por `DOCS_PATH` si está definido.
+      - Las rutas extra pasadas con `--path`.
+    Usa `--include-repo` para añadir además todo el repo. Si no se configura nada, se cae al repo
+    como último recurso (conviene definir `DOCS_PATH` para una provenance limpia · M1/B1).
     """
     logger.info("=" * 80)
     logger.info("MeetingForge - Indexación de documentación")
@@ -52,12 +59,14 @@ def main(
 
     ensure_data_dirs()
 
-    paths: list[Path] = []
-    paths.append(settings.project_root)
-    if settings.docs_path is not None:
-        paths.append(settings.docs_path)
-    if path:
-        paths.extend(path)
+    paths = resolve_corpus_paths(
+        settings.docs_path, path, settings.project_root, include_repo=include_repo
+    )
+    if not include_repo and settings.docs_path is None and not path:
+        logger.warning(
+            "Sin DOCS_PATH ni --path: se indexa el repo entero como último recurso. "
+            "Define DOCS_PATH (o usa --include-repo) para un corpus de documentación limpio."
+        )
 
     logger.info("Rutas a indexar:")
     for p in paths:

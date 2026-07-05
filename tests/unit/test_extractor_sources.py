@@ -8,7 +8,19 @@ from meeting_forge.analysis.extractor import (
     _RawDecision,
     _RawMeetingInsights,
 )
+from meeting_forge.ingestion.schemas import Transcript, TranscriptSegment
 from meeting_forge.rag.schemas import DocumentChunk, RetrievalResult
+
+
+def _transcript(n: int = 4) -> Transcript:
+    return Transcript(
+        segments=[
+            TranscriptSegment(start=float(i * 5), end=float(i * 5 + 5), text=f"seg {i}")
+            for i in range(n)
+        ],
+        duration_seconds=float(n * 5),
+        language="es",
+    )
 
 
 def _result(chunk_id: str, path: str, l_start: int, l_end: int) -> RetrievalResult:
@@ -74,3 +86,40 @@ def test_resolve_sources_handles_no_sources() -> None:
     out = InsightsExtractor._resolve_sources(raw, chunks)
     assert out.decisions[0].sources == []
     assert out.action_items[0].sources == []
+
+
+# ---------------------------------------------------------------------------
+# UX-6 · transcript_refs (marcadores S<n> → TranscriptRef con timestamps)
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_transcript_refs_maps_segment_markers() -> None:
+    raw = _RawMeetingInsights(
+        decisions=[_RawDecision(title="D", description="d", transcript_refs=["S1", "S3"])],
+        action_items=[_RawActionItem(description="T", transcript_refs=["S0"])],
+    )
+    out = InsightsExtractor._resolve_sources(raw, [], _transcript(4))
+
+    dec_refs = out.decisions[0].transcript_refs
+    assert [r.segment_index for r in dec_refs] == [1, 3]
+    assert dec_refs[0].start == 5.0 and dec_refs[0].end == 10.0
+    assert dec_refs[0].text == "seg 1"
+    assert out.action_items[0].transcript_refs[0].segment_index == 0
+
+
+def test_resolve_transcript_refs_drops_out_of_range_and_dupes() -> None:
+    raw = _RawMeetingInsights(
+        decisions=[
+            _RawDecision(title="D", description="d", transcript_refs=["S0", "S0", "S99", "Sx"])
+        ],
+    )
+    out = InsightsExtractor._resolve_sources(raw, [], _transcript(2))
+    assert [r.segment_index for r in out.decisions[0].transcript_refs] == [0]
+
+
+def test_resolve_transcript_refs_empty_without_transcript() -> None:
+    raw = _RawMeetingInsights(
+        decisions=[_RawDecision(title="D", description="d", transcript_refs=["S0"])],
+    )
+    out = InsightsExtractor._resolve_sources(raw, [])
+    assert out.decisions[0].transcript_refs == []

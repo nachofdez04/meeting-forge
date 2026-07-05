@@ -12,7 +12,7 @@ import openai
 from anthropic import Anthropic
 from loguru import logger
 from openai import OpenAI
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from ..config import settings
 from ..observability import TelemetryCollector
@@ -63,6 +63,41 @@ def _with_retries(
             time.sleep(delay)
     assert last_exc is not None
     raise last_exc
+
+
+def _parse_structured_with_retry(
+    produce: Callable[[], str],
+    schema: type[T],
+    *,
+    clean: Callable[[str], str],
+    retries: int,
+) -> T:
+    """Llama a `produce` (texto del LLM) y valida contra `schema`, reintentando si la respuesta no
+    es JSON válido o no cumple el schema (BUG-3).
+
+    Los reintentos de red transitorios ya los gestiona `_with_retries` dentro de `produce`; esta capa
+    cubre respuestas **truncadas** (p.ej. por `max_tokens`) o **mal formadas**, que de otro modo
+    tirarían el run entero. Como el LLM es no determinista, volver a pedir suele resolverlo.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(retries + 1):
+        raw = produce()
+        try:
+            return schema.model_validate(json.loads(clean(raw)))
+        except (json.JSONDecodeError, ValidationError) as exc:
+            last_exc = exc
+            logger.warning(
+                "Respuesta estructurada inválida para {s} (intento {a}/{n}): {e}",
+                s=schema.__name__,
+                a=attempt + 1,
+                n=retries + 1,
+                e=exc,
+            )
+    assert last_exc is not None
+    raise RuntimeError(
+        f"El LLM no devolvió JSON válido para {schema.__name__} tras {retries + 1} intento(s): "
+        f"{last_exc}"
+    ) from last_exc
 
 
 def _usage_tokens(response: object, in_attr: str, out_attr: str) -> tuple[int, int]:
@@ -153,6 +188,8 @@ class AnthropicProvider:
                 latency_s=latency,
             )
 
+        if not response.content:
+            raise RuntimeError("Respuesta de Anthropic sin contenido")
         block = response.content[0]
         if not hasattr(block, "text"):
             raise RuntimeError("Respuesta de Anthropic sin contenido de texto")
@@ -171,9 +208,13 @@ class AnthropicProvider:
             f"{json.dumps(schema.model_json_schema(), ensure_ascii=False)}\n\n"
             "No incluyas markdown, explicaciones ni texto adicional. Solo el JSON."
         )
-        raw = self.complete(f"{prompt}\n\n{json_instruction}", system=system, max_tokens=max_tokens)
-        parsed = json.loads(_strip_markdown_fences(raw))
-        return schema.model_validate(parsed)
+        full_prompt = f"{prompt}\n\n{json_instruction}"
+        return _parse_structured_with_retry(
+            lambda: self.complete(full_prompt, system=system, max_tokens=max_tokens),
+            schema,
+            clean=_strip_markdown_fences,
+            retries=settings.llm_max_retries,
+        )
 
 
 class OpenAIProvider:
@@ -259,18 +300,25 @@ class OpenAIProvider:
                 max_tokens=max_tokens or settings.generation_max_tokens,
             )
 
-        start = time.perf_counter()
-        response = _with_retries(
-            _create,
+        def _produce() -> str:
+            start = time.perf_counter()
+            response = _with_retries(
+                _create,
+                retries=settings.llm_max_retries,
+                base_delay=settings.llm_retry_base_delay,
+            )
+            self._record(response, time.perf_counter() - start)
+            content = response.choices[0].message.content
+            if content is None:
+                raise RuntimeError("Respuesta de OpenAI sin contenido")
+            return str(content)
+
+        return _parse_structured_with_retry(
+            _produce,
+            schema,
+            clean=lambda s: s,  # response_format=json_object ya devuelve JSON sin fences
             retries=settings.llm_max_retries,
-            base_delay=settings.llm_retry_base_delay,
         )
-        self._record(response, time.perf_counter() - start)
-        content = response.choices[0].message.content
-        if content is None:
-            raise RuntimeError("Respuesta de OpenAI sin contenido")
-        parsed = json.loads(content)
-        return schema.model_validate(parsed)
 
 
 class OllamaProvider(OpenAIProvider):

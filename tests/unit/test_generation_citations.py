@@ -110,8 +110,8 @@ class TestRewriteMarkers:
         reg = CitationRegistry()
         reg.register(_ref("a.md", 1, 5))
         text, used = rewrite_markers("Fuera #1\n```\nDentro #1 no se toca\n```", reg)
-        assert "[^1]" in text          # el de fuera sí se reescribe
-        assert "Dentro #1" in text     # el de dentro se preserva
+        assert "[^1]" in text  # el de fuera sí se reescribe
+        assert "Dentro #1" in text  # el de dentro se preserva
         assert 1 in used
 
     def test_no_markers_returns_text_unchanged(self) -> None:

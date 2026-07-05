@@ -23,6 +23,13 @@ class PublishError(RuntimeError):
     """Error durante la publicación. Incluye contexto diagnóstico."""
 
 
+class NothingToPublishError(PublishError):
+    """No hay cambios que publicar: lo aprobado ya coincide con el repo destino (BUG-7).
+
+    Subtipo benigno para que la UI lo muestre como información, no como error rojo.
+    """
+
+
 def _build_request(
     metadata: MeetingMetadata,
     validation_state: MeetingValidationState,
@@ -116,6 +123,14 @@ def publish_meeting(
         logger.info("Commit creado: {sha}", sha=commit_sha)
         repo_module.push(target_repo, request.branch_name)
         logger.info("Push completado: {branch}", branch=request.branch_name)
+    except repo_module.EmptyCommitError as exc:
+        # BUG-7: caso benigno. Volvemos a la rama base para no dejar el repo en una rama de trabajo
+        # sin commits, y señalamos "nada que publicar" (la UI lo muestra como info, no como error).
+        try:
+            repo_module.checkout_branch(target_repo, settings.git_base_branch)
+        except repo_module.GitOperationError:
+            logger.warning("No se pudo volver a la rama base tras un commit vacío")
+        raise NothingToPublishError(str(exc)) from exc
     except repo_module.GitOperationError as exc:
         raise PublishError(f"Error en operación git: {exc}") from exc
 
@@ -158,7 +173,32 @@ def publish_meeting(
         compare_url=compare_url,
     )
     _write_publish_result(meeting_dir, result)
+    _index_published_docs(metadata.meeting_id, validation_state, docs)
     return result
+
+
+def _index_published_docs(
+    meeting_id: str,
+    validation_state: MeetingValidationState,
+    docs: list[GeneratedDocView],
+) -> None:
+    """Indexa los documentos aprobados en la memoria RAG (UX-9). Best-effort: nunca rompe publicar."""
+    if not settings.rag_index_generated_docs:
+        return
+    try:
+        from ..memory import index_approved_documents
+        from ..rag.embeddings import SentenceTransformerEmbeddings
+        from ..rag.vector_store import ChromaVectorStore
+
+        index_approved_documents(
+            meeting_id,
+            docs,
+            validation_state,
+            store=ChromaVectorStore(),
+            embeddings=SentenceTransformerEmbeddings(),
+        )
+    except Exception as exc:  # pragma: no cover - defensivo (depende de Chroma/embeddings)
+        logger.warning("No se pudo indexar en la memoria RAG los documentos publicados: {e}", e=exc)
 
 
 def _write_publish_result(meeting_dir: Path, result: PublishResult) -> None:

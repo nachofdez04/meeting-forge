@@ -155,9 +155,7 @@ class TestRenderActa:
         """La decisión sin sources no debe añadir markers."""
         reg = CitationRegistry()
         insights = MeetingInsights(
-            decisions=[
-                Decision(title="Sin fuentes", description="Nada.", sources=[])
-            ]
+            decisions=[Decision(title="Sin fuentes", description="Nada.", sources=[])]
         )
         md, used = render_acta(insights, _metadata(), reg)
         assert "[^" not in md

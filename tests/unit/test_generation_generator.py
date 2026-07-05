@@ -149,8 +149,43 @@ class TestConsolidatedNoDecisions:
 
 
 # ---------------------------------------------------------------------------
-# GeneratedDocument fields
+# Consolidado: remapeo #local → [^global] con fuentes duplicadas
 # ---------------------------------------------------------------------------
+
+
+class TestConsolidatedDuplicateSources:
+    def test_marker_maps_to_deduplicated_local_numbering(self) -> None:
+        # El LLM ve la numeración DEDUPLICADA del registro local: con sources [A, A, B],
+        # #2 es B. El remapeo debe respetarlo (antes enumeraba decision.sources cruda y
+        # #2 acababa apuntando a A).
+        ref_a = _ref(path="docs/a.md", start=1, end=5)
+        ref_b = _ref(path="docs/b.md", start=10, end=20)
+        insights = MeetingInsights(
+            decisions=[
+                Decision(
+                    title="Decisión con duplicados",
+                    description="Descripción.",
+                    sources=[ref_a, ref_a, ref_b],
+                )
+            ]
+        )
+        provider = _make_mock_provider(
+            {
+                "title": "",
+                "status": "Propuesto",
+                "context_md": "Basado en #2.",
+                "decision_md": "Se decide.",
+                "consequences_md": "Ninguna.",
+            }
+        )
+        gen = DocumentGenerator(provider=provider)
+        doc = gen.generate_adr_consolidated(insights, _metadata())
+
+        assert doc is not None
+        md = doc.markdown_content
+        assert "Basado en [^2]." in md
+        # La footnote 2 debe ser la fuente B (segunda única), no la duplicada A.
+        assert "[^2]: `docs/b.md`" in md
 
 
 class TestGeneratedDocumentFields:

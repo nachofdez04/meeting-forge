@@ -12,7 +12,7 @@ from ..ingestion.schemas import Transcript
 from ..rag.retriever import Retriever
 from ..rag.schemas import RetrievalResult, SourceRef
 from .llm_client import LLMProvider, get_provider
-from .schemas import ActionItem, Decision, MeetingInsights
+from .schemas import ActionItem, Decision, MeetingInsights, TranscriptRef
 
 _DEFAULT_PROMPT = """
 Analiza la siguiente transcripción de una reunión técnica y extrae:
@@ -22,14 +22,19 @@ Analiza la siguiente transcripción de una reunión técnica y extrae:
 3. **Temas principales**: Los tópicos centrales de la discusión.
 4. **Resumen ejecutivo**: Un párrafo que sintetice lo más importante.
 
+Cada línea del transcript lleva un marcador de segmento `[S0]`, `[S1]`, … Para cada decisión y
+tarea, incluye en `transcript_refs` los marcadores (`"S3"`, `"S7"`) de los segmentos donde se
+discutió. Cita solo lo que realmente la respalda; si no aplica ninguno, deja la lista vacía.
+
 Transcripción:
 {transcript}
 """
 
 _SOURCE_MARKER_RE = re.compile(r"#(\d+)")
+_SEGMENT_MARKER_RE = re.compile(r"S(\d+)")
 
 
-# --- Schemas internos: el LLM emite `sources: list[str]` (marcadores "#N"). ---
+# --- Schemas internos: el LLM emite marcadores `"#N"` (docs RAG) y `"S<n>"` (segmentos). ---
 
 
 class _RawDecision(BaseModel):
@@ -39,6 +44,7 @@ class _RawDecision(BaseModel):
     owners: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     sources: list[str] = Field(default_factory=list)
+    transcript_refs: list[str] = Field(default_factory=list)
 
 
 class _RawActionItem(BaseModel):
@@ -46,6 +52,7 @@ class _RawActionItem(BaseModel):
     assignee: str | None = None
     deadline: str | None = None
     sources: list[str] = Field(default_factory=list)
+    transcript_refs: list[str] = Field(default_factory=list)
 
 
 class _RawMeetingInsights(BaseModel):
@@ -88,13 +95,15 @@ class InsightsExtractor:
 
         context_block, ordered_chunks = self._build_context(transcript)
         self.last_context = ordered_chunks
+        # Texto con índices de segmento `[S<n>]` para que el LLM cite momentos del audio (UX-6).
+        transcript_text = transcript.to_indexed_text()
         if self.retriever is not None and "{context}" in self.prompt_template:
             prompt = self.prompt_template.format(
                 context=context_block,
-                transcript=transcript.to_text(),
+                transcript=transcript_text,
             )
         else:
-            prompt = self.prompt_template.format(transcript=transcript.to_text())
+            prompt = self.prompt_template.format(transcript=transcript_text)
 
         raw = self.provider.complete_structured(
             prompt=prompt,
@@ -105,7 +114,7 @@ class InsightsExtractor:
             ),
         )
 
-        insights = self._resolve_sources(raw, ordered_chunks)
+        insights = self._resolve_sources(raw, ordered_chunks, transcript)
         logger.info(
             "Insights extraídos: {d} decisiones, {a} tareas, {s} con citas",
             d=len(insights.decisions),
@@ -115,9 +124,7 @@ class InsightsExtractor:
         )
         return insights
 
-    def _build_context(
-        self, transcript: Transcript
-    ) -> tuple[str, list[RetrievalResult]]:
+    def _build_context(self, transcript: Transcript) -> tuple[str, list[RetrievalResult]]:
         """Recupera chunks y construye el bloque de contexto con marcadores `#N`."""
         if self.retriever is None:
             return "", []
@@ -130,10 +137,7 @@ class InsightsExtractor:
         total_chars = 0
         used: list[RetrievalResult] = []
         for idx, res in enumerate(results, start=1):
-            header = (
-                f"[#{idx}] {res.chunk.source_path}"
-                f":{res.chunk.line_start}-{res.chunk.line_end}"
-            )
+            header = f"[#{idx}] {res.chunk.source_path}:{res.chunk.line_start}-{res.chunk.line_end}"
             if res.chunk.section_path:
                 header += f"  ({' › '.join(res.chunk.section_path)})"
             block = f"{header}\n{res.chunk.text}\n"
@@ -147,9 +151,12 @@ class InsightsExtractor:
 
     @staticmethod
     def _resolve_sources(
-        raw: _RawMeetingInsights, ordered_chunks: list[RetrievalResult]
+        raw: _RawMeetingInsights,
+        ordered_chunks: list[RetrievalResult],
+        transcript: Transcript | None = None,
     ) -> MeetingInsights:
-        """Mapea marcadores `"#N"` a SourceRef usando la lista ordenada."""
+        """Mapea marcadores `"#N"` a SourceRef (docs) y `"S<n>"` a TranscriptRef (audio · UX-6)."""
+
         def to_refs(markers: list[str]) -> list[SourceRef]:
             refs: list[SourceRef] = []
             seen: set[str] = set()
@@ -176,6 +183,28 @@ class InsightsExtractor:
                 )
             return refs
 
+        segments = transcript.segments if transcript is not None else []
+
+        def to_transcript_refs(markers: list[str]) -> list[TranscriptRef]:
+            refs: list[TranscriptRef] = []
+            seen: set[int] = set()
+            for marker in markers:
+                m = _SEGMENT_MARKER_RE.search(marker)
+                if not m:
+                    continue
+                idx = int(m.group(1))
+                if idx < 0 or idx >= len(segments):
+                    logger.warning("Marcador de segmento S{n} fuera de rango", n=idx)
+                    continue
+                if idx in seen:
+                    continue
+                seen.add(idx)
+                seg = segments[idx]
+                refs.append(
+                    TranscriptRef(segment_index=idx, start=seg.start, end=seg.end, text=seg.text)
+                )
+            return refs
+
         decisions = [
             Decision(
                 title=d.title,
@@ -184,6 +213,7 @@ class InsightsExtractor:
                 owners=d.owners,
                 tags=d.tags,
                 sources=to_refs(d.sources),
+                transcript_refs=to_transcript_refs(d.transcript_refs),
             )
             for d in raw.decisions
         ]
@@ -193,6 +223,7 @@ class InsightsExtractor:
                 assignee=a.assignee,
                 deadline=a.deadline,
                 sources=to_refs(a.sources),
+                transcript_refs=to_transcript_refs(a.transcript_refs),
             )
             for a in raw.action_items
         ]
